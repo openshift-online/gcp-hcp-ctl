@@ -6,6 +6,7 @@
 package ops
 
 import (
+	"github.com/ckandag/gcp-hcp-cli/pkg/ops/pam"
 	"github.com/ckandag/gcp-hcp-cli/pkg/ops/wf"
 
 	"github.com/spf13/cobra"
@@ -30,6 +31,7 @@ Use 'ops wf' for direct workflow management.`,
 	cmd.AddCommand(newDescribeCmd())
 	cmd.AddCommand(newDiagnoseCmd())
 	cmd.AddCommand(wf.NewWfCmd())
+	cmd.AddCommand(pam.NewPamCmd())
 
 	return cmd
 }

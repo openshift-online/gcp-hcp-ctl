@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/output"
 	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/workflows"
+	"github.com/ckandag/gcp-hcp-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -77,6 +77,10 @@ Examples:
 				return fmt.Errorf("creating client: %w", err)
 			}
 			defer client.Close()
+
+			if err := checkPAMGate(ctx, client, "logs", cmd, os.Stderr); err != nil {
+				return err
+			}
 
 			fmt.Fprintf(os.Stderr, "Getting logs for %s", podName)
 			if container != "" {
