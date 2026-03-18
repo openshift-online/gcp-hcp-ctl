@@ -21,6 +21,7 @@ listing workflows and execution history, and resuming paused workflows.`,
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newStatusCmd())
 	cmd.AddCommand(newResumeCmd())
+	cmd.AddCommand(newAuditCmd())
 
 	return cmd
 }
