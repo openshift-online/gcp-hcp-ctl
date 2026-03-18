@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/output"
 	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/workflows"
+	"github.com/ckandag/gcp-hcp-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -73,6 +73,10 @@ Examples:
 				return fmt.Errorf("creating client: %w", err)
 			}
 			defer client.Close()
+
+			if err := checkPAMGate(ctx, client, "describe", cmd, os.Stderr); err != nil {
+				return err
+			}
 
 			fmt.Fprintf(os.Stderr, "Describing %s %s", resourceType, resourceName)
 			if namespace != "" {

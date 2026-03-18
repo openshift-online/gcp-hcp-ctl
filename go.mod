@@ -3,10 +3,12 @@ module github.com/ckandag/gcp-hcp-cli
 go 1.24.5
 
 require (
+	cloud.google.com/go/privilegedaccessmanager v0.3.1
 	cloud.google.com/go/workflows v1.14.3
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/oauth2 v0.35.0
 	google.golang.org/api v0.266.0
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -42,5 +44,4 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260203192932-546029d2fa20 // indirect
 	google.golang.org/grpc v1.78.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 )

@@ -126,6 +126,28 @@ func (c *Client) workflowName(name string) string {
 	return fmt.Sprintf("projects/%s/locations/%s/workflows/%s", c.Project, c.Region, name)
 }
 
+// WorkflowDetail holds detailed metadata about a workflow, including labels.
+type WorkflowDetail struct {
+	Name   string            `json:"name"`
+	State  string            `json:"state"`
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// GetWorkflow retrieves metadata for a workflow, including labels.
+func (c *Client) GetWorkflow(ctx context.Context, name string) (*WorkflowDetail, error) {
+	wf, err := c.workflowClient.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
+		Name: c.workflowName(name),
+	})
+	if err != nil {
+		return nil, wrapAuthError("getting workflow '"+name+"'", err)
+	}
+	return &WorkflowDetail{
+		Name:   name,
+		State:  wf.State.String(),
+		Labels: wf.Labels,
+	}, nil
+}
+
 // Execute starts a workflow and returns the execution name.
 func (c *Client) Execute(ctx context.Context, workflowName string, args map[string]interface{}) (string, error) {
 	argJSON, err := json.Marshal(args)

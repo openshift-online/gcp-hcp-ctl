@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/ops"
 	"github.com/ckandag/gcp-hcp-cli/pkg/config"
+	"github.com/ckandag/gcp-hcp-cli/pkg/ops"
 
 	"github.com/spf13/cobra"
 )
