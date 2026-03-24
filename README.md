@@ -47,6 +47,19 @@ gcphcp ops logs my-pod -n hypershift -c etcd --tail 50
 # Describe resources
 gcphcp ops describe pods my-pod -n hypershift
 gcphcp ops describe deployment my-deploy -n kube-system
+
+# Delete resources (pods, jobs, deployments)
+gcphcp ops delete pods my-pod -n clusters-abc123
+gcphcp ops delete pods my-pod -n clusters-abc123 --grace-period 0
+
+# Expand PVC storage
+gcphcp ops expand-volume data-etcd-0 -n clusters-abc123 --size 20Gi
+
+# etcd operations
+gcphcp ops etcd health -n clusters-abc123
+gcphcp ops etcd status -n clusters-abc123
+gcphcp ops etcd member-list -n clusters-abc123
+gcphcp ops etcd defrag -n clusters-abc123
 ```
 
 ### Workflow Management (`ops wf`)

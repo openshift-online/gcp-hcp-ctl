@@ -734,6 +734,213 @@ func PrintDiagnosis(w io.Writer, rootCause, confidence, severity string, evidenc
 	return nil
 }
 
+// shortenEndpoint extracts "etcd-N" from a full etcd endpoint URL.
+func shortenEndpoint(endpoint string) string {
+	if parts := strings.Split(endpoint, "."); len(parts) > 1 {
+		return strings.TrimPrefix(parts[0], "https://")
+	}
+	return endpoint
+}
+
+// FormatBytes converts a numeric byte count to a human-readable string.
+func FormatBytes(v interface{}) string {
+	var b float64
+	switch n := v.(type) {
+	case float64:
+		b = n
+	case int:
+		b = float64(n)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+
+	const (
+		KiB = 1024
+		MiB = 1024 * KiB
+		GiB = 1024 * MiB
+	)
+
+	switch {
+	case b >= GiB:
+		return fmt.Sprintf("%.1f GiB", b/GiB)
+	case b >= MiB:
+		return fmt.Sprintf("%.1f MiB", b/MiB)
+	case b >= KiB:
+		return fmt.Sprintf("%.1f KiB", b/KiB)
+	default:
+		return fmt.Sprintf("%.0f B", b)
+	}
+}
+
+// PrintEtcdHealth renders etcd endpoint health as a table.
+func PrintEtcdHealth(w io.Writer, data interface{}) error {
+	items, ok := data.([]interface{})
+	if !ok || len(items) == 0 {
+		return PrintJSON(w, data)
+	}
+
+	// Check if any endpoint has an error field
+	hasErrors := false
+	for _, item := range items {
+		if errMsg := GetString(AsMap(item), "error"); errMsg != "" {
+			hasErrors = true
+			break
+		}
+	}
+
+	var t *Table
+	if hasErrors {
+		t = NewTable(w, "ENDPOINT", "HEALTH", "TOOK", "ERROR")
+	} else {
+		t = NewTable(w, "ENDPOINT", "HEALTH", "TOOK")
+	}
+
+	for _, item := range items {
+		m := AsMap(item)
+		health := "false"
+		if h, ok := m["health"].(bool); ok && h {
+			health = "true"
+		}
+		if hasErrors {
+			t.AddRow(
+				shortenEndpoint(GetString(m, "endpoint")),
+				health,
+				GetString(m, "took"),
+				GetString(m, "error"),
+			)
+		} else {
+			t.AddRow(
+				shortenEndpoint(GetString(m, "endpoint")),
+				health,
+				GetString(m, "took"),
+			)
+		}
+	}
+	return t.Flush()
+}
+
+// PrintEtcdStatus renders etcd endpoint status as a table with human-readable sizes.
+func PrintEtcdStatus(w io.Writer, data interface{}) error {
+	items, ok := data.([]interface{})
+	if !ok || len(items) == 0 {
+		return PrintJSON(w, data)
+	}
+
+	// Determine leader member_id
+	var leaderID float64
+	for _, item := range items {
+		status := AsMap(AsMap(item)["Status"])
+		if l, ok := status["leader"].(float64); ok {
+			leaderID = l
+			break
+		}
+	}
+
+	t := NewTable(w, "ENDPOINT", "ROLE", "VERSION", "DB SIZE", "DB IN USE", "REVISION", "RAFT INDEX", "RAFT TERM")
+	for _, item := range items {
+		m := AsMap(item)
+		status := AsMap(m["Status"])
+		header := AsMap(status["header"])
+
+		role := "follower"
+		if memberID, ok := header["member_id"].(float64); ok && memberID == leaderID {
+			role = "leader"
+		}
+
+		t.AddRow(
+			shortenEndpoint(GetString(m, "Endpoint")),
+			role,
+			GetString(status, "version"),
+			FormatBytes(status["dbSize"]),
+			FormatBytes(status["dbSizeInUse"]),
+			fmt.Sprintf("%v", header["revision"]),
+			fmt.Sprintf("%v", status["raftIndex"]),
+			fmt.Sprintf("%v", status["raftTerm"]),
+		)
+	}
+	return t.Flush()
+}
+
+// PrintEtcdMemberList renders etcd member list as a table.
+func PrintEtcdMemberList(w io.Writer, data interface{}) error {
+	m := AsMap(data)
+	members, ok := m["members"].([]interface{})
+	if !ok || len(members) == 0 {
+		return PrintJSON(w, data)
+	}
+
+	t := NewTable(w, "NAME", "ID", "IS LEARNER", "PEER URLS", "CLIENT URLS")
+	for _, member := range members {
+		mm := AsMap(member)
+
+		isLearner := "false"
+		if l, ok := mm["isLearner"].(bool); ok && l {
+			isLearner = "true"
+		}
+
+		t.AddRow(
+			GetString(mm, "name"),
+			formatUint64(mm["ID"]),
+			isLearner,
+			joinShortenedURLs(mm["peerURLs"]),
+			joinShortenedURLs(mm["clientURLs"]),
+		)
+	}
+	return t.Flush()
+}
+
+// formatUint64 formats a float64 (from JSON) as an integer string without scientific notation.
+func formatUint64(v interface{}) string {
+	if f, ok := v.(float64); ok {
+		return fmt.Sprintf("%.0f", f)
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+func shortenURL(u string) string {
+	// "https://etcd-0.etcd-discovery.clusters-xxx.svc:2380" -> "etcd-0:2380"
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+	host := u
+	port := ""
+	if idx := strings.LastIndex(u, ":"); idx != -1 {
+		host = u[:idx]
+		port = u[idx:] // includes ":"
+	}
+	if parts := strings.SplitN(host, ".", 2); len(parts) > 1 {
+		host = parts[0]
+	}
+	return host + port
+}
+
+func joinShortenedURLs(v interface{}) string {
+	arr, ok := v.([]interface{})
+	if !ok {
+		return fmt.Sprintf("%v", v)
+	}
+	parts := make([]string, 0, len(arr))
+	for _, u := range arr {
+		if s, ok := u.(string); ok {
+			parts = append(parts, shortenURL(s))
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+func joinURLs(v interface{}) string {
+	arr, ok := v.([]interface{})
+	if !ok {
+		return fmt.Sprintf("%v", v)
+	}
+	parts := make([]string, 0, len(arr))
+	for _, u := range arr {
+		if s, ok := u.(string); ok {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
 // SortItems sorts a list of Kubernetes items by namespace then name.
 func SortItems(items []interface{}) {
 	sort.Slice(items, func(i, j int) bool {

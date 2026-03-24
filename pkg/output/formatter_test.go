@@ -338,3 +338,118 @@ func TestPrintAnalysis_FallbackForNonJSON(t *testing.T) {
 		t.Error("expected raw analysis text in fallback output")
 	}
 }
+
+func TestFormatBytes(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  string
+	}{
+		{"GiB", float64(1273696256), "1.2 GiB"},
+		{"MiB", float64(52428800), "50.0 MiB"},
+		{"KiB", float64(2048), "2.0 KiB"},
+		{"bytes", float64(512), "512 B"},
+		{"int", 1073741824, "1.0 GiB"},
+		{"string fallback", "unknown", "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FormatBytes(tt.input); got != tt.want {
+				t.Errorf("FormatBytes(%v) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrintEtcdHealth(t *testing.T) {
+	var buf bytes.Buffer
+	data := []interface{}{
+		map[string]interface{}{"endpoint": "https://etcd-0.etcd-discovery.clusters-test.svc:2379", "health": true, "took": "10ms"},
+		map[string]interface{}{"endpoint": "https://etcd-1.etcd-discovery.clusters-test.svc:2379", "health": true, "took": "12ms"},
+		map[string]interface{}{"endpoint": "https://etcd-2.etcd-discovery.clusters-test.svc:2379", "health": false, "took": "5001ms"},
+	}
+	if err := PrintEtcdHealth(&buf, data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"ENDPOINT", "HEALTH", "TOOK", "etcd-0", "etcd-1", "etcd-2", "true", "false", "10ms", "5001ms"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestPrintEtcdStatus(t *testing.T) {
+	var buf bytes.Buffer
+	data := []interface{}{
+		map[string]interface{}{
+			"Endpoint": "https://etcd-0.etcd-discovery.clusters-test.svc:2379",
+			"Status": map[string]interface{}{
+				"dbSize": float64(1273696256), "dbSizeInUse": float64(1073217536),
+				"leader": float64(1038), "raftIndex": float64(174491), "raftTerm": float64(15), "version": "3.5.21",
+				"header": map[string]interface{}{"member_id": float64(4426), "revision": float64(139328)},
+			},
+		},
+		map[string]interface{}{
+			"Endpoint": "https://etcd-1.etcd-discovery.clusters-test.svc:2379",
+			"Status": map[string]interface{}{
+				"dbSize": float64(1259982848), "dbSizeInUse": float64(1073307648),
+				"leader": float64(1038), "raftIndex": float64(174491), "raftTerm": float64(15), "version": "3.5.21",
+				"header": map[string]interface{}{"member_id": float64(1038), "revision": float64(139328)},
+			},
+		},
+	}
+	if err := PrintEtcdStatus(&buf, data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"ENDPOINT", "ROLE", "VERSION", "DB SIZE", "DB IN USE", "RAFT INDEX", "RAFT TERM",
+		"etcd-0", "etcd-1", "follower", "leader", "3.5.21", "GiB", "139328"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestPrintEtcdMemberList(t *testing.T) {
+	var buf bytes.Buffer
+	data := map[string]interface{}{
+		"header": map[string]interface{}{"cluster_id": float64(123)},
+		"members": []interface{}{
+			map[string]interface{}{
+				"ID": float64(4426), "name": "etcd-0", "isLearner": false,
+				"peerURLs":   []interface{}{"https://etcd-0:2380"},
+				"clientURLs": []interface{}{"https://etcd-0:2379"},
+			},
+			map[string]interface{}{
+				"ID": float64(8955), "name": "etcd-1", "isLearner": false,
+				"peerURLs":   []interface{}{"https://etcd-1:2380"},
+				"clientURLs": []interface{}{"https://etcd-1:2379"},
+			},
+		},
+	}
+	if err := PrintEtcdMemberList(&buf, data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"NAME", "ID", "IS LEARNER", "PEER URLS", "CLIENT URLS", "etcd-0", "etcd-1", "false"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestShortenEndpoint(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"https://etcd-0.etcd-discovery.clusters-test.svc:2379", "etcd-0"},
+		{"https://etcd-1.etcd-discovery.clusters-test.svc:2379", "etcd-1"},
+		{"https://single-host:2379", "https://single-host:2379"},
+	}
+	for _, tt := range tests {
+		if got := shortenEndpoint(tt.input); got != tt.want {
+			t.Errorf("shortenEndpoint(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
