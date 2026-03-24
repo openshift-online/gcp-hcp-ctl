@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/cloudrun"
@@ -133,8 +137,8 @@ func runCompanion(ctx context.Context, project, region, serviceName, pdIncident 
 	var history []cloudrun.ChatMessage
 	var maxIterations int
 
-	fmt.Fprintf(stderr, "\n%sSRE Companion ready.%s Type your message, %s/resume%s to resume a session, or %sexit%s to quit.\n",
-		bold, reset, italic, reset, italic, reset)
+	fmt.Fprintf(stderr, "\n%sSRE Companion ready.%s Type %s/help%s for available commands, or just ask a question.\n",
+		bold, reset, italic, reset)
 
 	// Pre-load PagerDuty incident if requested.
 	pendingPDIncident := pdIncident
@@ -142,10 +146,14 @@ func runCompanion(ctx context.Context, project, region, serviceName, pdIncident 
 	// Set up readline with history and colored prompt.
 	prompt := fmt.Sprintf("\n%s───────────────────────────────────────────%s\n%s%s> %s", dim, reset, bold, project, reset)
 
+	homeDir, _ := os.UserHomeDir()
+	historyFile := filepath.Join(homeDir, ".gcphcp", "sre-companion", "readline_history")
+
 	rl, err := readline.NewFromConfig(&readline.Config{
 		Prompt:          prompt,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
+		HistoryFile:     historyFile,
 	})
 	if err != nil {
 		return fmt.Errorf("initializing readline: %w", err)
@@ -203,12 +211,15 @@ func runCompanion(ctx context.Context, project, region, serviceName, pdIncident 
 		}
 
 		if input == "/resume" {
-			resumed, err := handleResume(project, rl, stderr)
+			resumed, resumedPath, err := handleResume(project, rl, stderr)
 			if err != nil {
 				fmt.Fprintf(stderr, "%sError: %v%s\n", red, err, reset)
 			} else if resumed != nil {
 				history = resumed
 				printHistory(history, stdout)
+				if resumedPath != "" {
+					fmt.Fprintf(stderr, "%sResumed session log: %s%s\n", dim, resumedPath, reset)
+				}
 			}
 			continue
 		}
@@ -228,7 +239,7 @@ func runCompanion(ctx context.Context, project, region, serviceName, pdIncident 
 					fmt.Fprintf(stderr, "%sLoaded PagerDuty incident %s — sending to agent...%s\n", green, pdCtx.IncidentID, reset)
 
 					assistantText, err := chatTurn(ctx, client, serviceURL, history, tools, maxIterations, executor, sessionLog, rl, stdout, stderr)
-					if err != nil {
+					if err != nil && err != context.Canceled {
 						fmt.Fprintf(stderr, "%sError: %v%s\n", red, err, reset)
 						history = history[:len(history)-1]
 					} else if assistantText != "" {
@@ -246,9 +257,11 @@ func runCompanion(ctx context.Context, project, region, serviceName, pdIncident 
 
 		assistantText, err := chatTurn(ctx, client, serviceURL, history, tools, maxIterations, executor, sessionLog, rl, stdout, stderr)
 		if err != nil {
-			fmt.Fprintf(stderr, "%sError: %v%s\n", red, err, reset)
-			sessionLog.Log(SessionEvent{Type: "error", Error: err.Error()})
-			// Remove the failed user message from history.
+			if err != context.Canceled {
+				fmt.Fprintf(stderr, "%sError: %v%s\n", red, err, reset)
+				sessionLog.Log(SessionEvent{Type: "error", Error: err.Error()})
+			}
+			// Remove the failed/interrupted user message from history.
 			history = history[:len(history)-1]
 			continue
 		}
@@ -265,6 +278,33 @@ func runCompanion(ctx context.Context, project, region, serviceName, pdIncident 
 	return nil
 }
 
+// startSpinner runs a spinner on stderr and returns a stop function.
+// Calling stop() clears the spinner character and stops the goroutine.
+func startSpinner(stderr io.Writer) func() {
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	done := make(chan struct{})
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Fprint(stderr, "\r \r") // clear spinner
+				return
+			case <-time.After(100 * time.Millisecond):
+				fmt.Fprintf(stderr, "\r%s%s%s", dim, frames[i%len(frames)], reset)
+				i++
+			}
+		}
+	}()
+	return func() {
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
+	}
+}
+
 // chatTurn handles a single conversational turn, including tool-call sub-loops.
 // Returns the accumulated assistant text for this turn.
 func chatTurn(
@@ -279,6 +319,24 @@ func chatTurn(
 	rl *readline.Instance,
 	stdout, stderr io.Writer,
 ) (string, error) {
+	// Set up a per-turn context cancelled by Ctrl+C during streaming.
+	turnCtx, turnCancel := context.WithCancel(ctx)
+	defer turnCancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT)
+	go func() {
+		select {
+		case <-sigCh:
+			turnCancel()
+		case <-turnCtx.Done():
+		}
+	}()
+	defer func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+	}()
+
 	req := cloudrun.ChatRequest{
 		History:       history,
 		Tools:         tools,
@@ -290,7 +348,13 @@ func chatTurn(
 
 	for {
 		step := 0
-		result, err := client.ChatStream(ctx, serviceURL, req, func(event cloudrun.StreamEvent) {
+		var firstEvent atomic.Bool
+		stopSpinner := startSpinner(stderr)
+
+		result, err := client.ChatStream(turnCtx, serviceURL, req, func(event cloudrun.StreamEvent) {
+			if !firstEvent.Swap(true) {
+				stopSpinner()
+			}
 			switch event.Event {
 			case cloudrun.EventText:
 				fmt.Fprint(stdout, event.Content)
@@ -306,7 +370,13 @@ func chatTurn(
 				fmt.Fprintf(stderr, "      %s-> %s%s\n", dim, result, reset)
 			}
 		})
+		stopSpinner()
+
 		if err != nil {
+			if turnCtx.Err() != nil {
+				fmt.Fprintf(stderr, "\n%s(interrupted)%s\n", dim, reset)
+				return "", context.Canceled
+			}
 			return "", err
 		}
 
@@ -419,14 +489,14 @@ func loadPDIncident(ctx context.Context, incidentID string, stderr io.Writer) (*
 	return pdClient.FetchIncidentContext(ctx, incidentID)
 }
 
-func handleResume(project string, rl *readline.Instance, stderr io.Writer) ([]cloudrun.ChatMessage, error) {
+func handleResume(project string, rl *readline.Instance, stderr io.Writer) ([]cloudrun.ChatMessage, string, error) {
 	sessions, err := ListSessions(project)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(sessions) == 0 {
 		fmt.Fprintf(stderr, "%sNo past sessions found for %s.%s\n", dim, project, reset)
-		return nil, nil
+		return nil, "", nil
 	}
 
 	fmt.Fprintf(stderr, "\n%sPast sessions:%s\n", bold, reset)
@@ -447,15 +517,20 @@ func handleResume(project string, rl *readline.Instance, stderr io.Writer) ([]cl
 	// Restore prompt.
 	rl.SetPrompt(buildPrompt(project))
 	if err != nil || strings.TrimSpace(answer) == "" {
-		return nil, nil
+		return nil, "", nil
 	}
 
 	idx, err := strconv.Atoi(strings.TrimSpace(answer))
 	if err != nil || idx < 1 || idx > len(sessions) {
-		return nil, fmt.Errorf("invalid selection: %s", answer)
+		return nil, "", fmt.Errorf("invalid selection: %s", answer)
 	}
 
-	return LoadHistory(sessions[idx-1].Path)
+	selectedPath := sessions[idx-1].Path
+	history, err := LoadHistory(selectedPath)
+	if err != nil {
+		return nil, "", err
+	}
+	return history, selectedPath, nil
 }
 
 func formatToolRequest(tool string, params map[string]interface{}) string {

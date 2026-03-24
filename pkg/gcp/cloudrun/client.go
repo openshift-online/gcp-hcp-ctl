@@ -432,7 +432,16 @@ func (c *Client) ChatStream(ctx context.Context, serviceURL string, req ChatRequ
 	}
 
 	if err := scanner.Err(); err != nil {
+		// If the context was cancelled, propagate it directly so the caller
+		// can distinguish an intentional abort from a real network error.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("reading stream: %w", err)
+	}
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 
 	return nil, fmt.Errorf("stream ended without a done or tool_call event")
