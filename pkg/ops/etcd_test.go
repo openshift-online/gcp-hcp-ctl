@@ -152,7 +152,7 @@ func TestNewEtcdCmd(t *testing.T) {
 	for _, sub := range cmd.Commands() {
 		subcommands[sub.Name()] = true
 	}
-	for _, name := range []string{"health", "status", "member-list", "defrag"} {
+	for _, name := range []string{"health", "status", "member-list", "defrag", "compact"} {
 		if !subcommands[name] {
 			t.Errorf("expected etcd subcommand %q not found", name)
 		}

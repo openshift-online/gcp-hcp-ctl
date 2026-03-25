@@ -26,13 +26,15 @@ Examples:
   gcphcp ops etcd health -n clusters-abc123
   gcphcp ops etcd status -n clusters-abc123
   gcphcp ops etcd member-list -n clusters-abc123
-  gcphcp ops etcd defrag -n clusters-abc123`,
+  gcphcp ops etcd defrag -n clusters-abc123
+  gcphcp ops etcd compact -n clusters-abc123`,
 	}
 
 	cmd.AddCommand(newEtcdHealthCmd())
 	cmd.AddCommand(newEtcdStatusCmd())
 	cmd.AddCommand(newEtcdMemberListCmd())
 	cmd.AddCommand(newEtcdDefragCmd())
+	cmd.AddCommand(newEtcdCompactCmd())
 
 	return cmd
 }
@@ -172,6 +174,45 @@ Examples:
 	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "HCP namespace (required)")
 	_ = cmd.MarkFlagRequired("namespace")
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "Maximum time to wait")
+
+	return cmd
+}
+
+func newEtcdCompactCmd() *cobra.Command {
+	var (
+		namespace string
+		timeout   time.Duration
+	)
+
+	cmd := &cobra.Command{
+		Use:   "compact",
+		Short: "Compact etcd revisions",
+		Long: `Compact etcd revisions on each member individually.
+Each member's current revision is discovered and compacted. This triggers
+the sidecar auto-defrag mechanism.
+
+Examples:
+  gcphcp ops etcd compact -n clusters-abc123`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runEtcdCommand(cmd, "etcd-compact", namespace, timeout, func(format output.Format, result map[string]interface{}) error {
+				if format == output.FormatJSON {
+					return output.PrintJSON(os.Stdout, result)
+				}
+				// compact returns "results" (string per member), not "output"
+				results, _ := result["results"].([]interface{})
+				for _, r := range results {
+					if s, ok := r.(string); ok {
+						fmt.Fprintln(os.Stdout, s)
+					}
+				}
+				return nil
+			})
+		},
+	}
+
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "HCP namespace (required)")
+	_ = cmd.MarkFlagRequired("namespace")
+	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "Maximum time to wait")
 
 	return cmd
 }
