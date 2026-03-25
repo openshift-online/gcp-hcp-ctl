@@ -106,6 +106,35 @@ func PrintResourceTable(w io.Writer, data map[string]interface{}, resourceType s
 		return printEventsTable(w, items)
 	case "configmaps", "cm":
 		return printConfigMapsTable(w, items)
+	case "persistentvolumeclaims", "pvc":
+		return PrintTable(w, items, []Column{
+			{Header: "NAMESPACE", Path: "metadata.namespace"},
+			{Header: "NAME", Path: "metadata.name"},
+			{Header: "STATUS", Path: "status.phase"},
+			{Header: "VOLUME", Path: "spec.volumeName"},
+			{Header: "CAPACITY", Path: "status.capacity.storage"},
+			{Header: "ACCESS MODES", Path: "spec.accessModes", Transform: TransformAccessModes},
+			{Header: "STORAGECLASS", Path: "spec.storageClassName"},
+			{Header: "AGE", Path: "metadata.creationTimestamp", Transform: TransformAge},
+		})
+	case "persistentvolumes", "pv":
+		return PrintTable(w, items, []Column{
+			{Header: "NAME", Path: "metadata.name"},
+			{Header: "CAPACITY", Path: "spec.capacity.storage"},
+			{Header: "ACCESS MODES", Path: "spec.accessModes", Transform: TransformAccessModes},
+			{Header: "RECLAIM POLICY", Path: "spec.persistentVolumeReclaimPolicy"},
+			{Header: "STATUS", Path: "status.phase"},
+			{Header: "CLAIM", Compute: func(item map[string]interface{}, _ []interface{}) string {
+				claimRef := AsMap(item["spec"])
+				cr := AsMap(claimRef["claimRef"])
+				if ns := GetString(cr, "namespace"); ns != "" {
+					return ns + "/" + GetString(cr, "name")
+				}
+				return ""
+			}},
+			{Header: "STORAGECLASS", Path: "spec.storageClassName"},
+			{Header: "AGE", Path: "metadata.creationTimestamp", Transform: TransformAge},
+		})
 	default:
 		return printGenericTable(w, items, resourceType)
 	}
@@ -223,6 +252,29 @@ func printConfigMapsTable(w io.Writer, items []interface{}) error {
 		)
 	}
 	return t.Flush()
+}
+
+func formatAccessModes(v interface{}) string {
+	modes, ok := v.([]interface{})
+	if !ok || len(modes) == 0 {
+		return ""
+	}
+	abbrevs := map[string]string{
+		"ReadWriteOnce":    "RWO",
+		"ReadOnlyMany":     "ROX",
+		"ReadWriteMany":    "RWX",
+		"ReadWriteOncePod": "RWOP",
+	}
+	parts := make([]string, 0, len(modes))
+	for _, m := range modes {
+		s := fmt.Sprintf("%v", m)
+		if abbr, ok := abbrevs[s]; ok {
+			parts = append(parts, abbr)
+		} else {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, ",")
 }
 
 func printNamespacesTable(w io.Writer, items []interface{}) error {
@@ -926,6 +978,19 @@ func TransformBool(v interface{}) string {
 		return fmt.Sprintf("%v", b)
 	}
 	return "false"
+}
+
+// TransformAccessModes abbreviates Kubernetes access modes (e.g., ReadWriteOnce → RWO).
+func TransformAccessModes(v interface{}) string {
+	return formatAccessModes(v)
+}
+
+// TransformAge formats a Kubernetes timestamp as a human-readable duration.
+func TransformAge(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return age(s)
+	}
+	return ""
 }
 
 // TransformUint64 formats a float64 as an integer string without scientific notation.

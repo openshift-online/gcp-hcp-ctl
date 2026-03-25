@@ -522,3 +522,102 @@ func TestTransformShortenURL(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatAccessModes(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  string
+	}{
+		{"single RWO", []interface{}{"ReadWriteOnce"}, "RWO"},
+		{"single ROX", []interface{}{"ReadOnlyMany"}, "ROX"},
+		{"single RWX", []interface{}{"ReadWriteMany"}, "RWX"},
+		{"single RWOP", []interface{}{"ReadWriteOncePod"}, "RWOP"},
+		{"multiple modes", []interface{}{"ReadWriteOnce", "ReadOnlyMany"}, "RWO,ROX"},
+		{"unknown mode", []interface{}{"CustomMode"}, "CustomMode"},
+		{"nil input", nil, ""},
+		{"empty slice", []interface{}{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatAccessModes(tt.input); got != tt.want {
+				t.Errorf("formatAccessModes() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrintPVCTable(t *testing.T) {
+	var buf bytes.Buffer
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"name":              "data-etcd-0",
+					"namespace":         "clusters-test-ns",
+					"creationTimestamp":  "2025-01-01T00:00:00Z",
+				},
+				"spec": map[string]interface{}{
+					"volumeName":       "pvc-68d9514c-44cd-484e-aefa-7084db20348c",
+					"accessModes":      []interface{}{"ReadWriteOnce"},
+					"storageClassName": "standard-rwo",
+				},
+				"status": map[string]interface{}{
+					"phase":    "Bound",
+					"capacity": map[string]interface{}{"storage": "21Gi"},
+				},
+			},
+		},
+	}
+	if err := PrintResourceTable(&buf, data, "persistentvolumeclaims"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"NAMESPACE", "NAME", "STATUS", "VOLUME", "CAPACITY", "ACCESS MODES", "STORAGECLASS", "AGE",
+		"clusters-test-ns", "data-etcd-0", "Bound", "pvc-68d9514c", "21Gi", "RWO", "standard-rwo",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestPrintPVTable(t *testing.T) {
+	var buf bytes.Buffer
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"name":              "pvc-1e2be0c7-8d1f-43a6-9a6b-31c4a9eeadd4",
+					"creationTimestamp":  "2025-01-01T00:00:00Z",
+				},
+				"spec": map[string]interface{}{
+					"capacity":                      map[string]interface{}{"storage": "8Gi"},
+					"accessModes":                   []interface{}{"ReadWriteOnce"},
+					"persistentVolumeReclaimPolicy":  "Delete",
+					"storageClassName":               "standard-rwo",
+					"claimRef": map[string]interface{}{
+						"namespace": "clusters-test-ns",
+						"name":      "data-etcd-0",
+					},
+				},
+				"status": map[string]interface{}{
+					"phase": "Bound",
+				},
+			},
+		},
+	}
+	if err := PrintResourceTable(&buf, data, "persistentvolumes"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"NAME", "CAPACITY", "ACCESS MODES", "RECLAIM POLICY", "STATUS", "CLAIM", "STORAGECLASS", "AGE",
+		"pvc-1e2be0c7", "8Gi", "RWO", "Delete", "Bound", "clusters-test-ns/data-etcd-0", "standard-rwo",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
