@@ -79,7 +79,7 @@ func TestNewOpsCmd(t *testing.T) {
 		subcommands[sub.Name()] = true
 	}
 
-	expected := []string{"get", "logs", "describe", "diagnose", "delete", "expand-volume", "etcd", "wf", "pam"}
+	expected := []string{"get", "logs", "describe", "diagnose", "delete", "expand-volume", "etcd", "rollout-restart", "wf", "pam"}
 	for _, name := range expected {
 		if !subcommands[name] {
 			t.Errorf("expected subcommand %q not found", name)
