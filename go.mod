@@ -1,4 +1,4 @@
-module github.com/ckandag/gcp-hcp-cli
+module github.com/openshift-online/gcp-hcp-ctl
 
 go 1.24.5
 

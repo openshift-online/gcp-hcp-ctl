@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	pamclient "github.com/ckandag/gcp-hcp-cli/pkg/gcp/pam"
+	pamclient "github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/pam"
 )
 
 func TestNewPamCmd(t *testing.T) {

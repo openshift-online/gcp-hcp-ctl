@@ -8,9 +8,9 @@ import (
 	"path"
 	"time"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/workflows"
-	"github.com/ckandag/gcp-hcp-cli/pkg/ops/pam"
-	"github.com/ckandag/gcp-hcp-cli/pkg/output"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/workflows"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops/pam"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/output"
 	"github.com/spf13/cobra"
 )
 

@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/cloudrun"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/cloudrun"
 	"github.com/ergochat/readline"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/cloudrun"
-	pamclient "github.com/ckandag/gcp-hcp-cli/pkg/gcp/pam"
-	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/workflows"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/cloudrun"
+	pamclient "github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/pam"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/workflows"
 )
 
 const wfRunPrefix = "wf_run_"

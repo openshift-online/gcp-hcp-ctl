@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	pamclient "github.com/ckandag/gcp-hcp-cli/pkg/gcp/pam"
+	pamclient "github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/pam"
 	"github.com/spf13/cobra"
 )
 

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/cloudrun"
-	"github.com/ckandag/gcp-hcp-cli/pkg/output"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/cloudrun"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/output"
 	"github.com/spf13/cobra"
 )
 

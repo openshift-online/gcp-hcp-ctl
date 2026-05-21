@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	pamclient "github.com/ckandag/gcp-hcp-cli/pkg/gcp/pam"
+	pamclient "github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/pam"
 )
 
 // EnsurePAMGrant checks if a workflow requires PAM and ensures the user has an active grant.

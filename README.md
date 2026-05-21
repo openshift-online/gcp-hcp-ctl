@@ -1,6 +1,8 @@
-# gcphcp
+# gcp-hcp-ctl
 
 CLI for managing GCP Hosted Control Plane (HCP) clusters.
+
+Part of the [GCP HCP](https://github.com/openshift-online/gcp-hcp) project. See [design decisions](https://github.com/openshift-online/gcp-hcp/tree/main/design-decisions) for architectural context.
 
 ## Quick Start
 
@@ -139,3 +141,8 @@ The CLI communicates with GKE clusters exclusively through Cloud Workflows
 (Zero Operator Access pattern). The workflows are deployed to the management
 cluster's GCP project and use the GKE API with Workload Identity for
 authentication.
+
+## Related Repositories
+
+- [gcp-hcp](https://github.com/openshift-online/gcp-hcp) - Design decisions and architecture
+- [gcp-hcp-infra](https://github.com/openshift-online/gcp-hcp-infra) - Terraform infrastructure and ArgoCD configuration

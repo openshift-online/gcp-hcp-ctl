@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/auditlog"
-	"github.com/ckandag/gcp-hcp-cli/pkg/output"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/auditlog"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/output"
 	"github.com/spf13/cobra"
 )
 

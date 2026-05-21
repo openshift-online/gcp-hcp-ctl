@@ -1,6 +1,6 @@
 .PHONY: build test lint clean help release
 
-MODULE  := github.com/ckandag/gcp-hcp-cli
+MODULE  := github.com/openshift-online/gcp-hcp-ctl
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE    := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -30,4 +30,4 @@ release: ## Tag and push a release (usage: make release v=0.2.0)
 	@echo "Tagging v$(v)..."
 	git tag -a "v$(v)" -m "Release v$(v)"
 	git push origin "v$(v)"
-	@echo "Pushed v$(v) — GitHub Actions will create the release."
+	@echo "Pushed v$(v)"

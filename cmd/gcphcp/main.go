@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	gcphcpcli "github.com/ckandag/gcp-hcp-cli/pkg/cli"
+	gcphcpcli "github.com/openshift-online/gcp-hcp-ctl/pkg/cli"
 )
 
 func main() {

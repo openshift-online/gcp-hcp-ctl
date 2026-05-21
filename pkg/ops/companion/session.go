@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/ckandag/gcp-hcp-cli/pkg/gcp/cloudrun"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/cloudrun"
 )
 
 // SessionEvent represents a single logged event in a session.

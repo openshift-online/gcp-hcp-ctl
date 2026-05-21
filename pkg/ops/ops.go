@@ -6,9 +6,9 @@
 package ops
 
 import (
-	"github.com/ckandag/gcp-hcp-cli/pkg/ops/companion"
-	"github.com/ckandag/gcp-hcp-cli/pkg/ops/pam"
-	"github.com/ckandag/gcp-hcp-cli/pkg/ops/wf"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops/companion"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops/pam"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops/wf"
 
 	"github.com/spf13/cobra"
 )

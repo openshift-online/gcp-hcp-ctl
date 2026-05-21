@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	pamclient "github.com/ckandag/gcp-hcp-cli/pkg/gcp/pam"
-	"github.com/ckandag/gcp-hcp-cli/pkg/output"
+	pamclient "github.com/openshift-online/gcp-hcp-ctl/pkg/gcp/pam"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/output"
 	"github.com/spf13/cobra"
 )
 
