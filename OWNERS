@@ -1,0 +1,9 @@
+required_reviewers:
+  - gcp-hcp
+approvers:
+  - apahim
+  - cblecker
+  - ckandag
+  - cristianoveiga
+  - jimdaga
+  - patjlm
