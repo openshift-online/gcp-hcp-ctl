@@ -35,14 +35,14 @@ func sessionsBaseDir() string {
 	if err != nil {
 		home = os.Getenv("HOME")
 	}
-	return filepath.Join(home, ".gcphcp", "sre-companion", "sessions")
+	return filepath.Join(home, ".gcphcpctl", "sre-companion", "sessions")
 }
 
 func projectSessionDir(project string) string {
 	return filepath.Join(sessionsBaseDir(), project)
 }
 
-// NewSessionLogger creates a session log file under ~/.gcphcp/sre-companion/sessions/<project>/
+// NewSessionLogger creates a session log file under ~/.gcphcpctl/sre-companion/sessions/<project>/
 // and removes stale session files across all projects.
 func NewSessionLogger(project string) (*SessionLogger, error) {
 	go cleanupStaleSessions(sessionsBaseDir())

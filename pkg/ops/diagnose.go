@@ -31,16 +31,16 @@ project and region. Use --service-name to override the default service name.
 
 Examples:
   # Diagnose a crashlooping pod
-  gcphcp ops diagnose "why is pod etcd-0 crashlooping in namespace clusters-foo"
+  gcphcpctl ops diagnose "why is pod etcd-0 crashlooping in namespace clusters-foo"
 
   # Investigate a node issue
-  gcphcp ops diagnose "node gke-abc123 is NotReady, what's wrong?"
+  gcphcpctl ops diagnose "node gke-abc123 is NotReady, what's wrong?"
 
   # Get JSON output for scripting
-  gcphcp ops diagnose "check health of namespace hypershift" -o json
+  gcphcpctl ops diagnose "check health of namespace hypershift" -o json
 
   # Use a custom service name
-  gcphcp ops diagnose "why are pods failing" --service-name my-diagnose-agent`,
+  gcphcpctl ops diagnose "why are pods failing" --service-name my-diagnose-agent`,
 
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,12 +50,6 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()

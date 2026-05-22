@@ -57,24 +57,18 @@ Available local tools are dynamically discovered from pam-gated workflows.
 
 Examples:
   # Start an interactive session
-  gcphcp ops sre-companion
+  gcphcpctl ops sre-companion
 
   # Load a PagerDuty incident for context
-  gcphcp ops sre-companion --pagerduty-incident P1234567
+  gcphcpctl ops sre-companion --pagerduty-incident P1234567
 
   # Use a custom service name
-  gcphcp ops sre-companion --service-name my-companion-agent`,
+  gcphcpctl ops sre-companion --service-name my-companion-agent`,
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project, _ := cmd.Flags().GetString("project")
 			region, _ := cmd.Flags().GetString("region")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
@@ -147,7 +141,7 @@ func runCompanion(ctx context.Context, project, region, serviceName, pdIncident 
 	prompt := fmt.Sprintf("\n%s───────────────────────────────────────────%s\n%s%s> %s", dim, reset, bold, project, reset)
 
 	homeDir, _ := os.UserHomeDir()
-	historyFile := filepath.Join(homeDir, ".gcphcp", "sre-companion", "readline_history")
+	historyFile := filepath.Join(homeDir, ".gcphcpctl", "sre-companion", "readline_history")
 
 	rl, err := readline.NewFromConfig(&readline.Config{
 		Prompt:          prompt,

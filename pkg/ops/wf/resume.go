@@ -24,18 +24,18 @@ func newResumeCmd() *cobra.Command {
 		Long: `Resume a workflow execution that is waiting on a callback.
 
 Fetches the pending callback URL for the execution and triggers it
-with the provided data. Use 'gcphcp ops wf status' to see if an
+with the provided data. Use 'gcphcpctl ops wf status' to see if an
 execution has pending callbacks.
 
 Examples:
   # Resume with approval data
-  gcphcp ops wf resume approval-flow abc123-def456 --data '{"approved": true}'
+  gcphcpctl ops wf resume approval-flow abc123-def456 --data '{"approved": true}'
 
   # Resume with empty payload
-  gcphcp ops wf resume approval-flow abc123-def456
+  gcphcpctl ops wf resume approval-flow abc123-def456
 
   # Resume and wait for completion
-  gcphcp ops wf resume approval-flow abc123-def456 --data '{"approved": true}' --wait`,
+  gcphcpctl ops wf resume approval-flow abc123-def456 --data '{"approved": true}' --wait`,
 
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -46,12 +46,6 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			execName := fmt.Sprintf("projects/%s/locations/%s/workflows/%s/executions/%s",
 				project, region, workflowName, execID)
@@ -109,7 +103,7 @@ Examples:
 			}
 
 			fmt.Fprintf(os.Stderr, "\nCheck progress with:\n")
-			fmt.Fprintf(os.Stderr, "  gcphcp ops wf status %s %s\n", workflowName, execID)
+			fmt.Fprintf(os.Stderr, "  gcphcpctl ops wf status %s %s\n", workflowName, execID)
 
 			return nil
 		},

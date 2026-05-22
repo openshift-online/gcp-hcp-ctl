@@ -29,10 +29,10 @@ DB size in free space for defragmentation.
 
 Examples:
   # Expand etcd PVC to 20Gi
-  gcphcp ops expand-volume data-etcd-0 -n clusters-abc123 --size 20Gi
+  gcphcpctl ops expand-volume data-etcd-0 -n clusters-abc123 --size 20Gi
 
   # Expand to 50Gi
-  gcphcp ops expand-volume data-etcd-1 -n clusters-abc123 --size 50Gi`,
+  gcphcpctl ops expand-volume data-etcd-1 -n clusters-abc123 --size 50Gi`,
 
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -42,12 +42,6 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			data := map[string]interface{}{
 				"namespace": namespace,

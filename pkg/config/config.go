@@ -1,5 +1,5 @@
-// Package config provides configuration file support for the gcphcp CLI.
-// Configuration is loaded from ~/.gcphcp/config.yaml and can be overridden
+// Package config provides configuration file support for the gcphcpctl CLI.
+// Configuration is loaded from ~/.gcphcpctl/config.yaml and can be overridden
 // by environment variables and CLI flags.
 package config
 
@@ -24,7 +24,7 @@ func DefaultConfigDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".gcphcp")
+	return filepath.Join(home, ".gcphcpctl")
 }
 
 // DefaultConfigPath returns the default config file path.

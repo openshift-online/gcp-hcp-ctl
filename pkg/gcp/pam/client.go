@@ -32,7 +32,7 @@ func wrapAuthError(action string, err error) error {
 	case strings.Contains(msg, "NotFound") || strings.Contains(msg, "not found"):
 		return fmt.Errorf("%s: resource not found\n\n"+
 			"  Verify the entitlement or grant ID exists:\n"+
-			"    gcphcp ops pam list --project <project> --region <region>", action)
+			"    gcphcpctl ops pam list --project <project> --region <region>", action)
 	case strings.Contains(msg, "Unauthenticated") || strings.Contains(msg, "401"):
 		return fmt.Errorf("%s: authentication failed\n\n"+
 			"  Run: gcloud auth application-default login", action)
@@ -305,7 +305,7 @@ func (c *Client) WaitForGrant(ctx context.Context, grantName string) (*GrantInfo
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("timed out waiting for grant approval\n\n"+
-				"  Check status with: gcphcp ops pam status %s", grantName)
+				"  Check status with: gcphcpctl ops pam status %s", grantName)
 		case <-time.After(pollInterval):
 		}
 

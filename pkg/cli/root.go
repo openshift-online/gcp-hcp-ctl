@@ -18,14 +18,14 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "gcphcp",
+	Use:   "gcphcpctl",
 	Short: "CLI for managing GCP Hosted Control Plane clusters",
-	Long: `gcphcp is the unified CLI for managing GCP Hosted Control Plane (HCP) clusters.
+	Long: `gcphcpctl is the unified CLI for managing GCP Hosted Control Plane (HCP) clusters.
 
 It provides commands for cluster lifecycle, infrastructure management,
 and operational debugging of hosted control plane clusters on GCP.
 
-Configuration priority: CLI flags > environment variables > config file (~/.gcphcp/config.yaml).`,
+Configuration priority: CLI flags > environment variables > config file (~/.gcphcpctl/config.yaml).`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -53,10 +53,10 @@ func loadConfig(cmd *cobra.Command) error {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&project, "project", os.Getenv("GCPHCP_PROJECT"), "GCP project ID (env: GCPHCP_PROJECT)")
-	rootCmd.PersistentFlags().StringVar(&region, "region", os.Getenv("GCPHCP_REGION"), "GCP region (env: GCPHCP_REGION)")
+	rootCmd.PersistentFlags().StringVar(&project, "project", os.Getenv("GCPHCPCTL_PROJECT"), "GCP project ID (env: GCPHCPCTL_PROJECT)")
+	rootCmd.PersistentFlags().StringVar(&region, "region", os.Getenv("GCPHCPCTL_REGION"), "GCP region (env: GCPHCPCTL_REGION)")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text, json, yaml")
-	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Config file path (default: ~/.gcphcp/config.yaml)")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Config file path (default: ~/.gcphcpctl/config.yaml)")
 
 	// Register the ops subtree. Self-contained so it can be extracted as a plugin.
 	rootCmd.AddCommand(ops.NewOpsCmd())

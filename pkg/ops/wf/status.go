@@ -30,13 +30,13 @@ Use --wait to block until the execution completes.
 
 Examples:
   # Check status of an execution
-  gcphcp ops wf status get abc123-def456
+  gcphcpctl ops wf status get abc123-def456
 
   # Wait for an execution to complete
-  gcphcp ops wf status get abc123-def456 --wait
+  gcphcpctl ops wf status get abc123-def456 --wait
 
   # JSON output
-  gcphcp ops wf status describe abc123-def456 -o json`,
+  gcphcpctl ops wf status describe abc123-def456 -o json`,
 
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,12 +47,6 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			execName := fmt.Sprintf("projects/%s/locations/%s/workflows/%s/executions/%s",
 				project, region, workflowName, execID)
@@ -145,7 +139,7 @@ func printStatus(result *workflows.ExecutionResult, workflowName, execID, output
 			fmt.Fprintf(os.Stdout, "  %s %s\n", cb.Method, cb.URL)
 		}
 		fmt.Fprintf(os.Stdout, "\nResume with:\n")
-		fmt.Fprintf(os.Stdout, "  gcphcp ops wf resume %s %s --data '{\"approved\": true}'\n", workflowName, execID)
+		fmt.Fprintf(os.Stdout, "  gcphcpctl ops wf resume %s %s --data '{\"approved\": true}'\n", workflowName, execID)
 	}
 
 	if result.State == "SUCCEEDED" || result.State == "FAILED" {

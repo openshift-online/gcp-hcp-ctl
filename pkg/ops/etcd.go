@@ -23,11 +23,11 @@ These commands run etcdctl against the etcd cluster in the specified
 HCP namespace (clusters-*).
 
 Examples:
-  gcphcp ops etcd health -n clusters-abc123
-  gcphcp ops etcd status -n clusters-abc123
-  gcphcp ops etcd member-list -n clusters-abc123
-  gcphcp ops etcd defrag -n clusters-abc123
-  gcphcp ops etcd compact -n clusters-abc123`,
+  gcphcpctl ops etcd health -n clusters-abc123
+  gcphcpctl ops etcd status -n clusters-abc123
+  gcphcpctl ops etcd member-list -n clusters-abc123
+  gcphcpctl ops etcd defrag -n clusters-abc123
+  gcphcpctl ops etcd compact -n clusters-abc123`,
 	}
 
 	cmd.AddCommand(newEtcdHealthCmd())
@@ -51,8 +51,8 @@ func newEtcdHealthCmd() *cobra.Command {
 		Long: `Check the health of all etcd endpoints in an HCP cluster.
 
 Examples:
-  gcphcp ops etcd health -n clusters-abc123
-  gcphcp ops etcd health -n clusters-abc123 -o json`,
+  gcphcpctl ops etcd health -n clusters-abc123
+  gcphcpctl ops etcd health -n clusters-abc123 -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEtcdCommand(cmd, "etcd-health", namespace, timeout, func(format output.Format, result map[string]interface{}) error {
 				if format == output.FormatJSON {
@@ -83,8 +83,8 @@ func newEtcdStatusCmd() *cobra.Command {
 raft index, leader info, and version.
 
 Examples:
-  gcphcp ops etcd status -n clusters-abc123
-  gcphcp ops etcd status -n clusters-abc123 -o json`,
+  gcphcpctl ops etcd status -n clusters-abc123
+  gcphcpctl ops etcd status -n clusters-abc123 -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEtcdCommand(cmd, "etcd-status", namespace, timeout, func(format output.Format, result map[string]interface{}) error {
 				if format == output.FormatJSON {
@@ -115,8 +115,8 @@ func newEtcdMemberListCmd() *cobra.Command {
 peer URLs, and client URLs.
 
 Examples:
-  gcphcp ops etcd member-list -n clusters-abc123
-  gcphcp ops etcd member-list -n clusters-abc123 -o json`,
+  gcphcpctl ops etcd member-list -n clusters-abc123
+  gcphcpctl ops etcd member-list -n clusters-abc123 -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEtcdCommand(cmd, "etcd-member-list", namespace, timeout, func(format output.Format, result map[string]interface{}) error {
 				if format == output.FormatJSON {
@@ -154,7 +154,7 @@ func newEtcdDefragCmd() *cobra.Command {
 This is a mutating operation that compacts etcd storage.
 
 Examples:
-  gcphcp ops etcd defrag -n clusters-abc123`,
+  gcphcpctl ops etcd defrag -n clusters-abc123`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEtcdCommand(cmd, "etcd-defrag", namespace, timeout, func(format output.Format, result map[string]interface{}) error {
 				if format == output.FormatJSON {
@@ -192,7 +192,7 @@ Each member's current revision is discovered and compacted. This triggers
 the sidecar auto-defrag mechanism.
 
 Examples:
-  gcphcp ops etcd compact -n clusters-abc123`,
+  gcphcpctl ops etcd compact -n clusters-abc123`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEtcdCommand(cmd, "etcd-compact", namespace, timeout, func(format output.Format, result map[string]interface{}) error {
 				if format == output.FormatJSON {
@@ -223,12 +223,6 @@ func runEtcdCommand(cmd *cobra.Command, etcdCommand, namespace string, timeout t
 	region, _ := cmd.Flags().GetString("region")
 	outputFormat, _ := cmd.Flags().GetString("output")
 
-	if project == "" {
-		return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-	}
-	if region == "" {
-		return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-	}
 
 	data := map[string]interface{}{
 		"namespace": namespace,

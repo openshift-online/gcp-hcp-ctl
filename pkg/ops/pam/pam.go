@@ -18,22 +18,22 @@ Use these commands to request, approve, and monitor grants.
 
 Examples:
   # List your grants
-  gcphcp ops pam list
+  gcphcpctl ops pam list
 
   # Request a new grant
-  gcphcp ops pam request --reason "investigating incident INC-123"
+  gcphcpctl ops pam request --reason "investigating incident INC-123"
 
   # Check grant status
-  gcphcp ops pam status <grant-id>
+  gcphcpctl ops pam status <grant-id>
 
   # Approve a pending grant (for approvers)
-  gcphcp ops pam approve <grant-id>
+  gcphcpctl ops pam approve <grant-id>
 
   # Deny a pending grant (for approvers)
-  gcphcp ops pam deny <grant-id>
+  gcphcpctl ops pam deny <grant-id>
 
   # Revoke an active grant
-  gcphcp ops pam revoke <grant-id> --reason "work completed"`,
+  gcphcpctl ops pam revoke <grant-id> --reason "work completed"`,
 	}
 
 	cmd.AddCommand(newRequestCmd())

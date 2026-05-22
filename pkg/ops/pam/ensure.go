@@ -61,7 +61,7 @@ func EnsurePAMGrant(ctx context.Context, project, pamEntitlement, reason string,
 		answer := strings.TrimSpace(scanner.Text())
 		if answer != "" && !strings.EqualFold(answer, "y") && !strings.EqualFold(answer, "yes") {
 			return fmt.Errorf("PAM grant required; aborting\n\n" +
-				"  Request a grant manually: gcphcp ops pam request --reason \"...\"")
+				"  Request a grant manually: gcphcpctl ops pam request --reason \"...\"")
 		}
 	}
 

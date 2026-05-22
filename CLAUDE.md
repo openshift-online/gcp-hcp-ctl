@@ -11,7 +11,7 @@ This file provides guidance to AI agents when working with code in this reposito
 ## Development Commands
 
 ```bash
-make build    # Build bin/gcphcp
+make build    # Build bin/gcphcpctl
 make test     # Run unit tests with race detection
 make lint     # Run go vet
 make clean    # Remove build artifacts
@@ -25,7 +25,7 @@ cmd/
 └── ops/              # Standalone plugin entry point (future extraction)
 pkg/
 ├── cli/              # Root command, version, completion
-├── config/           # Config file loading (~/.gcphcp/config.yaml)
+├── config/           # Config file loading (~/.gcphcpctl/config.yaml)
 ├── ops/              # Operational commands (self-contained, extractable)
 │   ├── companion/    # AI companion (PagerDuty, tools, sessions)
 │   ├── pam/          # Privileged Access Manager commands
@@ -41,7 +41,7 @@ hack/workflows/       # Cloud Workflow YAML definitions
 
 ## Architecture
 
-The `ops` subtree is self-contained under `pkg/ops/` with no dependencies on `pkg/cli/`. This allows extraction into a standalone plugin binary (`gcphcp-ops`). A stub entry point exists at `cmd/ops/main.go`.
+The `ops` subtree is self-contained under `pkg/ops/` with no dependencies on `pkg/cli/`. This allows extraction into a standalone plugin binary (`gcphcpctl-ops`). A stub entry point exists at `cmd/ops/main.go`.
 
 All cluster interactions go through Cloud Workflows (Zero Operator Access). Workflows are deployed to the management cluster's GCP project and use the GKE API with Workload Identity.
 
@@ -49,7 +49,7 @@ All cluster interactions go through Cloud Workflows (Zero Operator Access). Work
 
 - Go 1.24+ required
 - GCP credentials via `gcloud auth application-default login`
-- Configuration priority: CLI flags > environment variables > config file (`~/.gcphcp/config.yaml`)
+- Configuration priority: CLI flags > environment variables > config file (`~/.gcphcpctl/config.yaml`)
 - Version info injected via `-ldflags` at build time (see `Makefile`)
 
 ## Testing

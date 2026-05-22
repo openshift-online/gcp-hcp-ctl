@@ -26,16 +26,16 @@ Supported resource types: pods, jobs, deployments.
 
 Examples:
   # Delete a pod
-  gcphcp ops delete pods my-pod -n clusters-abc123
+  gcphcpctl ops delete pods my-pod -n clusters-abc123
 
   # Delete a deployment
-  gcphcp ops delete deployments my-deploy -n clusters-abc123
+  gcphcpctl ops delete deployments my-deploy -n clusters-abc123
 
   # Force delete a pod (grace period 0)
-  gcphcp ops delete pods my-pod -n clusters-abc123 --grace-period 0
+  gcphcpctl ops delete pods my-pod -n clusters-abc123 --grace-period 0
 
   # Short aliases work too
-  gcphcp ops delete po my-pod -n clusters-abc123`,
+  gcphcpctl ops delete po my-pod -n clusters-abc123`,
 
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -49,12 +49,7 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
+
 			if namespace == "" {
 				return fmt.Errorf("--namespace is required")
 			}

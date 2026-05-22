@@ -10,19 +10,19 @@ func init() {
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "completion [bash|zsh|fish|powershell]",
 		Short: "Generate shell completion scripts",
-		Long: `Generate shell completion scripts for gcphcp.
+		Long: `Generate shell completion scripts for gcphcpctl.
 
 To load completions:
 
 Bash:
-  $ source <(gcphcp completion bash)
+  $ source <(gcphcpctl completion bash)
 
 Zsh:
   $ echo "autoload -U compinit; compinit" >> ~/.zshrc
-  $ gcphcp completion zsh > "${fpath[1]}/_gcphcp"
+  $ gcphcpctl completion zsh > "${fpath[1]}/_gcphcpctl"
 
 Fish:
-  $ gcphcp completion fish | source
+  $ gcphcpctl completion fish | source
 `,
 		DisableFlagsInUseLine: true,
 		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},

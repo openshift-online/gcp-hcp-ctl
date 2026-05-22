@@ -28,14 +28,14 @@ Supported resource types: deployments, statefulsets, daemonsets.
 
 Examples:
   # Restart a deployment
-  gcphcp ops rollout-restart deployments operator -n hypershift
+  gcphcpctl ops rollout-restart deployments operator -n hypershift
 
   # Restart a statefulset
-  gcphcp ops rollout-restart statefulsets etcd -n clusters-abc123
+  gcphcpctl ops rollout-restart statefulsets etcd -n clusters-abc123
 
   # Short aliases work too
-  gcphcp ops rollout-restart deploy operator -n hypershift
-  gcphcp ops rollout-restart sts etcd -n clusters-abc123`,
+  gcphcpctl ops rollout-restart deploy operator -n hypershift
+  gcphcpctl ops rollout-restart sts etcd -n clusters-abc123`,
 
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -49,12 +49,7 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
+
 			if namespace == "" {
 				return fmt.Errorf("--namespace is required")
 			}

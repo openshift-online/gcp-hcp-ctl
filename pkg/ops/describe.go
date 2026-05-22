@@ -26,16 +26,16 @@ Works like kubectl describe but runs through Cloud Workflows.
 
 Examples:
   # Describe a pod
-  gcphcp ops describe pods my-pod -n hypershift
+  gcphcpctl ops describe pods my-pod -n hypershift
 
   # Describe a deployment
-  gcphcp ops describe deployment my-deploy -n kube-system
+  gcphcpctl ops describe deployment my-deploy -n kube-system
 
   # Describe a hosted cluster
-  gcphcp ops describe hc my-hc -n clusters
+  gcphcpctl ops describe hc my-hc -n clusters
 
   # Describe a node (cluster-scoped, no namespace needed)
-  gcphcp ops describe nodes gke-node-abc123`,
+  gcphcpctl ops describe nodes gke-node-abc123`,
 
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,12 +50,6 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			data := map[string]interface{}{
 				"resource_type": resourceType,

@@ -11,10 +11,10 @@ LDFLAGS := -X $(MODULE)/pkg/cli.version=$(VERSION) \
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
-build: ## Build the gcphcp binary
+build: ## Build the gcphcpctl binary
 	@mkdir -p bin
-	go build -ldflags "$(LDFLAGS)" -o bin/gcphcp ./cmd/gcphcp
-	@echo "Built bin/gcphcp"
+	go build -ldflags "$(LDFLAGS)" -o bin/gcphcpctl ./cmd/gcphcpctl
+	@echo "Built bin/gcphcpctl"
 
 test: ## Run unit tests
 	go test -race ./...

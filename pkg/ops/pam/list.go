@@ -34,35 +34,28 @@ grants pending your approval (for approvers).
 
 Examples:
   # List active and pending grants (default)
-  gcphcp ops pam list
+  gcphcpctl ops pam list
 
   # Include all historical grants
-  gcphcp ops pam list --state all
+  gcphcpctl ops pam list --state all
 
   # List only active grants
-  gcphcp ops pam list --state active
+  gcphcpctl ops pam list --state active
 
   # List only your grants
-  gcphcp ops pam list --mine
+  gcphcpctl ops pam list --mine
 
   # List grants pending your approval
-  gcphcp ops pam list --approvals
+  gcphcpctl ops pam list --approvals
 
   # List grants for a specific entitlement
-  gcphcp ops pam list --entitlement wf-invoker`,
+  gcphcpctl ops pam list --entitlement wf-invoker`,
 
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project, _ := cmd.Flags().GetString("project")
-			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
