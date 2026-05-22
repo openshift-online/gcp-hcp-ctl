@@ -66,27 +66,27 @@ Works like kubectl get but runs through Cloud Workflows.
 
 Examples:
   # List all pods in a namespace
-  gcphcp ops get pods -n hypershift
+  gcphcpctl ops get pods -n hypershift
 
   # Get a specific pod
-  gcphcp ops get pods my-pod -n hypershift
+  gcphcpctl ops get pods my-pod -n hypershift
 
   # AI-powered pod analysis
-  gcphcp ops get pods my-pod -n hypershift --analyze
+  gcphcpctl ops get pods my-pod -n hypershift --analyze
 
   # List all hosted clusters
-  gcphcp ops get hostedclusters -n clusters
+  gcphcpctl ops get hostedclusters -n clusters
 
   # Short aliases work too
-  gcphcp ops get hc -n clusters
-  gcphcp ops get deploy -n clusters-test-pd-test-pd
+  gcphcpctl ops get hc -n clusters
+  gcphcpctl ops get deploy -n clusters-test-pd-test-pd
 
   # Filter by label selector
-  gcphcp ops get pods -n hypershift -l app=nginx
+  gcphcpctl ops get pods -n hypershift -l app=nginx
 
   # List cluster-scoped resources
-  gcphcp ops get nodes
-  gcphcp ops get namespaces`,
+  gcphcpctl ops get nodes
+  gcphcpctl ops get namespaces`,
 
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -101,19 +101,13 @@ Examples:
 			}
 
 			if analyze && (resourceType != "pods" || resourceName == "") {
-				return fmt.Errorf("--analyze requires a specific pod name (e.g. gcphcp ops get pods my-pod -n ns --analyze)")
+				return fmt.Errorf("--analyze requires a specific pod name (e.g. gcphcpctl ops get pods my-pod -n ns --analyze)")
 			}
 
 			project, _ := cmd.Flags().GetString("project")
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			data := map[string]interface{}{
 				"resource_type": resourceType,

@@ -25,16 +25,16 @@ With a workflow name, lists recent execution history for that workflow.
 
 Examples:
   # List all deployed workflows
-  gcphcp ops wf list
+  gcphcpctl ops wf list
 
   # List recent executions for the 'get' workflow
-  gcphcp ops wf list get
+  gcphcpctl ops wf list get
 
   # List last 5 executions
-  gcphcp ops wf list get --limit 5
+  gcphcpctl ops wf list get --limit 5
 
   # JSON output
-  gcphcp ops wf list get -o json`,
+  gcphcpctl ops wf list get -o json`,
 
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -42,12 +42,6 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()

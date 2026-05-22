@@ -38,7 +38,7 @@ func wrapAuthError(action string, err error) error {
 			"  Check: gcloud projects get-iam-policy <project> --flatten='bindings[].members' --filter='bindings.members:<your-email>'", action)
 	case strings.Contains(msg, "NotFound") || strings.Contains(msg, "not found"):
 		return fmt.Errorf("%s: resource not found\n\n"+
-			"  Verify the workflow exists: gcphcp ops wf list --project <project> --region <region>\n"+
+			"  Verify the workflow exists: gcphcpctl ops wf list --project <project> --region <region>\n"+
 			"  Check --project and --region flags are correct", action)
 	case strings.Contains(msg, "Unauthenticated") || strings.Contains(msg, "401"):
 		return fmt.Errorf("%s: authentication failed\n\n"+

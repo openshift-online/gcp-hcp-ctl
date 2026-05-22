@@ -28,16 +28,16 @@ With a workflow name, filters to that specific workflow.
 
 Examples:
   # Show recent audit entries for all workflows
-  gcphcp ops wf audit
+  gcphcpctl ops wf audit
 
   # Show audit entries for the 'get' workflow
-  gcphcp ops wf audit get
+  gcphcpctl ops wf audit get
 
   # JSON output
-  gcphcp ops wf audit get -o json
+  gcphcpctl ops wf audit get -o json
 
   # Look back 30 days, show up to 50 entries
-  gcphcp ops wf audit --freshness 720h --limit 50`,
+  gcphcpctl ops wf audit --freshness 720h --limit 50`,
 
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -45,12 +45,6 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()

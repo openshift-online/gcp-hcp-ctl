@@ -1,5 +1,5 @@
-// Standalone entry point for the ops plugin (gcphcp-ops).
-// This can be built and distributed independently of the main gcphcp binary.
+// Standalone entry point for the ops plugin (gcphcpctl-ops).
+// This can be built and distributed independently of the main gcphcpctl binary.
 //
 // Build with: make build-ops
 package main
@@ -23,7 +23,7 @@ var (
 
 func main() {
 	root := ops.NewOpsCmd()
-	root.Use = "gcphcp-ops"
+	root.Use = "gcphcpctl-ops"
 	root.Short = "Operational commands for GCP HCP cluster debugging"
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(configPath)
@@ -39,13 +39,13 @@ func main() {
 		if !cmd.Flags().Changed("output") && cfg.Output != "" {
 			outputFormat = cfg.Output
 		}
-		return nil
+		return ops.ValidateRequiredFlags(cmd)
 	}
 
-	root.PersistentFlags().StringVar(&project, "project", os.Getenv("GCPHCP_PROJECT"), "GCP project ID (env: GCPHCP_PROJECT)")
-	root.PersistentFlags().StringVar(&region, "region", os.Getenv("GCPHCP_REGION"), "GCP region (env: GCPHCP_REGION)")
+	root.PersistentFlags().StringVar(&project, "project", os.Getenv("GCPHCPCTL_PROJECT"), "GCP project ID (env: GCPHCPCTL_PROJECT)")
+	root.PersistentFlags().StringVar(&region, "region", os.Getenv("GCPHCPCTL_REGION"), "GCP region (env: GCPHCPCTL_REGION)")
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text, json, yaml")
-	root.PersistentFlags().StringVar(&configPath, "config", "", "Config file path (default: ~/.gcphcp/config.yaml)")
+	root.PersistentFlags().StringVar(&configPath, "config", "", "Config file path (default: ~/.gcphcpctl/config.yaml)")
 
 	root.SilenceUsage = true
 	root.SilenceErrors = true

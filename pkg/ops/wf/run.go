@@ -31,13 +31,13 @@ Use --async to start the workflow and return immediately.
 
 Examples:
   # Run and wait for result
-  gcphcp ops wf run get --data '{"resource_type": "pods", "namespace": "hypershift"}'
+  gcphcpctl ops wf run get --data '{"resource_type": "pods", "namespace": "hypershift"}'
 
   # Run asynchronously (returns immediately)
-  gcphcp ops wf run describe --data '{"resource_type": "pods", "name": "etcd-0", "namespace": "hypershift"}' --async
+  gcphcpctl ops wf run describe --data '{"resource_type": "pods", "name": "etcd-0", "namespace": "hypershift"}' --async
 
   # Run with a timeout
-  gcphcp ops wf run get --data '{"resource_type": "nodes"}' --timeout 60s`,
+  gcphcpctl ops wf run get --data '{"resource_type": "nodes"}' --timeout 60s`,
 
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,12 +47,6 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			var parsedData map[string]interface{}
 			if data != "" {
@@ -99,7 +93,7 @@ Examples:
 
 			if async {
 				fmt.Fprintf(os.Stderr, "Workflow started. Check status with:\n")
-				fmt.Fprintf(os.Stderr, "  gcphcp ops wf status %s %s\n", workflowName, execID)
+				fmt.Fprintf(os.Stderr, "  gcphcpctl ops wf status %s %s\n", workflowName, execID)
 				return nil
 			}
 
@@ -107,7 +101,7 @@ Examples:
 
 			result, err := client.WaitForCompletion(ctx, execName)
 			if err != nil {
-				return fmt.Errorf("waiting for workflow: %w\n\nCheck status with: gcphcp ops wf status %s %s", err, workflowName, execID)
+				return fmt.Errorf("waiting for workflow: %w\n\nCheck status with: gcphcpctl ops wf status %s %s", err, workflowName, execID)
 			}
 
 			fmt.Fprintf(os.Stderr, "State: %s  Duration: %s\n", result.State, result.Duration.Round(time.Millisecond))

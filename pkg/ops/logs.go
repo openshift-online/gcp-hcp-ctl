@@ -28,16 +28,16 @@ Works like kubectl logs but runs through Cloud Workflows.
 
 Examples:
   # Get logs for a pod
-  gcphcp ops logs kube-apiserver-abc123 -n clusters-test-pd-test-pd
+  gcphcpctl ops logs kube-apiserver-abc123 -n clusters-test-pd-test-pd
 
   # Get logs from a specific container
-  gcphcp ops logs my-pod -n default -c my-container
+  gcphcpctl ops logs my-pod -n default -c my-container
 
   # Get last 50 lines
-  gcphcp ops logs my-pod -n default --tail 50
+  gcphcpctl ops logs my-pod -n default --tail 50
 
   # Get logs from previous container instance (crashloop debugging)
-  gcphcp ops logs my-pod -n default --previous`,
+  gcphcpctl ops logs my-pod -n default --previous`,
 
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,12 +47,7 @@ Examples:
 			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
+
 			if namespace == "" {
 				return fmt.Errorf("--namespace is required for logs")
 			}
@@ -112,7 +107,7 @@ Examples:
 						fmt.Fprintf(os.Stderr, "  - %v\n", c)
 					}
 				}
-				fmt.Fprintf(os.Stderr, "\nUse: gcphcp ops logs %s -n %s -c <container>\n", podName, namespace)
+				fmt.Fprintf(os.Stderr, "\nUse: gcphcpctl ops logs %s -n %s -c <container>\n", podName, namespace)
 				return fmt.Errorf("container name required")
 			}
 

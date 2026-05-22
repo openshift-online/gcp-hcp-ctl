@@ -123,8 +123,8 @@ func TestDefaultConfigDir(t *testing.T) {
 	if dir == "" {
 		t.Skip("could not determine home directory")
 	}
-	if filepath.Base(dir) != ".gcphcp" {
-		t.Errorf("expected dir to end with '.gcphcp', got %q", dir)
+	if filepath.Base(dir) != ".gcphcpctl" {
+		t.Errorf("expected dir to end with '.gcphcpctl', got %q", dir)
 	}
 }
 

@@ -31,26 +31,20 @@ and uses the only one found, or errors if multiple exist.
 
 Examples:
   # Request with auto-discovered entitlement
-  gcphcp ops pam request --reason "investigating incident INC-123"
+  gcphcpctl ops pam request --reason "investigating incident INC-123"
 
   # Request for a specific entitlement
-  gcphcp ops pam request wf-invoker --reason "deploying hotfix"
+  gcphcpctl ops pam request wf-invoker --reason "deploying hotfix"
 
   # Request with custom duration, don't wait for approval
-  gcphcp ops pam request --reason "maintenance" --duration 2h --wait=false`,
+  gcphcpctl ops pam request --reason "maintenance" --duration 2h --wait=false`,
 
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project, _ := cmd.Flags().GetString("project")
-			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
+
 			if reason == "" {
 				return fmt.Errorf("--reason is required")
 			}
@@ -89,7 +83,7 @@ Examples:
 			}
 
 			fmt.Fprintf(os.Stderr, "Waiting for approval... (Ctrl+C to cancel)\n")
-			fmt.Fprintf(os.Stderr, "  Check status: gcphcp ops pam status %s\n", grant.Name)
+			fmt.Fprintf(os.Stderr, "  Check status: gcphcpctl ops pam status %s\n", grant.Name)
 
 			grant, err = client.WaitForGrant(ctx, grant.Name)
 			if err != nil {

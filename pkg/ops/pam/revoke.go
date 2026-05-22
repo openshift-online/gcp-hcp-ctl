@@ -25,23 +25,16 @@ Use this to release access you no longer need instead of waiting for expiry.
 
 Examples:
   # Revoke a grant
-  gcphcp ops pam revoke fd166e71-574a-4420-ba5f-60d5de2e87c9 --reason "work completed"
+  gcphcpctl ops pam revoke fd166e71-574a-4420-ba5f-60d5de2e87c9 --reason "work completed"
 
   # Specify entitlement explicitly
-  gcphcp ops pam revoke fd166e71-574a-4420-ba5f-60d5de2e87c9 --entitlement wf-invoker`,
+  gcphcpctl ops pam revoke fd166e71-574a-4420-ba5f-60d5de2e87c9 --entitlement wf-invoker`,
 
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project, _ := cmd.Flags().GetString("project")
-			region, _ := cmd.Flags().GetString("region")
 			outputFormat, _ := cmd.Flags().GetString("output")
 
-			if project == "" {
-				return fmt.Errorf("--project is required (or set GCPHCP_PROJECT)")
-			}
-			if region == "" {
-				return fmt.Errorf("--region is required (or set GCPHCP_REGION)")
-			}
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), 2*time.Minute)
 			defer cancel()
