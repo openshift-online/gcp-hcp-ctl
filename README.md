@@ -24,6 +24,26 @@ export GCPHCPCTL_REGION=us-central1
 
 ## Commands
 
+### IAM Infrastructure for Hosted Clusters (`iam`)
+
+Create and destroy Workload Identity Federation (WIF) infrastructure for
+HyperShift clusters, including WIF pools, OIDC providers, and Google Service
+Accounts with IAM role bindings.
+
+```bash
+# Create IAM infrastructure for a cluster
+gcphcpctl iam create <infra-id> --oidc-issuer-url https://oidc.example.com/my-cluster
+gcphcpctl iam create <infra-id> --oidc-jwks-file /path/to/jwks.json
+gcphcpctl iam create <infra-id> --oidc-issuer-url https://oidc.example.com --output-file iam-output.json
+
+# Destroy IAM infrastructure for a cluster
+gcphcpctl iam destroy <infra-id>
+gcphcpctl iam destroy <infra-id> --yes    # skip confirmation prompt
+```
+
+All create operations are idempotent (safe to run multiple times). Destroy
+operations tolerate not-found errors gracefully.
+
 ### Operational Debugging (`ops`)
 
 Convenience wrappers that run Cloud Workflows to interact with GKE clusters
@@ -106,9 +126,12 @@ Config file location: `~/.gcphcpctl/config.yaml`
 cmd/gcphcpctl/        Entry point for the gcphcpctl binary
 pkg/
 ├── cli/              Root command, version, completion
+├── infra/
+│   └── iam/          IAM infrastructure orchestration and CLI commands
 ├── ops/              Operational commands (extractable as plugin)
 │   └── wf/           Workflow management subcommands
 ├── gcp/
+│   ├── iam/          Pure GCP IAM API client wrappers
 │   └── workflows/    Cloud Workflows API client
 ├── config/           Config file loading
 └── output/           Table and JSON output formatting
@@ -132,15 +155,23 @@ make clean    # Remove build artifacts
 
 ## Architecture
 
-The `ops` subtree is self-contained under `pkg/ops/` with no dependencies on
-`pkg/cli/`. This allows it to be extracted into a standalone plugin binary
-(`gcphcpctl-ops`) in the future. A stub entry point exists at `cmd/ops/main.go`
-for when that separation is needed.
+The CLI currently has the following command categories:
 
-The CLI communicates with GKE clusters exclusively through Cloud Workflows
-(Zero Operator Access pattern). The workflows are deployed to the management
-cluster's GCP project and use the GKE API with Workload Identity for
-authentication.
+- **Infrastructure commands** (`iam`, `network`): Provision and tear down GCP
+  resources for HyperShift clusters. These live under `pkg/infra/` for
+  orchestration logic and `pkg/gcp/` for pure GCP API client wrappers. The
+  separation keeps API clients reusable and side-effect-free while command
+  orchestration handles retries, ordering, and user interaction.
+
+- **Operational commands** (`ops`): Debug and remediate running clusters via
+  Cloud Workflows (Zero Operator Access pattern). The `ops` subtree is
+  self-contained under `pkg/ops/` with no dependencies on `pkg/cli/`, allowing
+  extraction into a standalone plugin binary (`gcphcpctl-ops`). A stub entry
+  point exists at `cmd/ops/main.go` for when that separation is needed.
+
+All commands inherit global `--project` and `--region` flags from the root
+command. Configuration follows the priority: CLI flags > environment variables
+> config file.
 
 ## Related Repositories
 

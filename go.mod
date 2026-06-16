@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/privilegedaccessmanager v0.3.1
 	cloud.google.com/go/workflows v1.14.3
 	github.com/ergochat/readline v0.1.3
+	github.com/go-logr/logr v1.4.3
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sync v0.19.0
@@ -22,7 +23,6 @@ require (
 	cloud.google.com/go/longrunning v0.8.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect

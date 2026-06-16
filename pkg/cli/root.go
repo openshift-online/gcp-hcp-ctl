@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/config"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/iam"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops"
 
 	"github.com/spf13/cobra"
@@ -58,8 +59,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text, json, yaml")
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Config file path (default: ~/.gcphcpctl/config.yaml)")
 
-	// Register the ops subtree. Self-contained so it can be extracted as a plugin.
 	rootCmd.AddCommand(ops.NewOpsCmd())
+	rootCmd.AddCommand(iam.NewIAMCmd())
 }
 
 // Execute runs the root command.
