@@ -44,6 +44,26 @@ gcphcpctl iam destroy <infra-id> --yes    # skip confirmation prompt
 All create operations are idempotent (safe to run multiple times). Destroy
 operations tolerate not-found errors gracefully.
 
+### Network Infrastructure for Hosted Clusters (`network`)
+
+Create and destroy GCP network infrastructure including VPC networks, subnets,
+Cloud Routers, Cloud NAT, and firewall rules.
+
+```bash
+# Create network infrastructure for a cluster
+gcphcpctl network create <infra-id>
+gcphcpctl network create <infra-id> --vpc-cidr 10.1.0.0/24
+gcphcpctl network create <infra-id> --output-file network-output.json
+
+# Destroy network infrastructure for a cluster
+gcphcpctl network destroy <infra-id>
+gcphcpctl network destroy <infra-id> --yes    # skip confirmation prompt
+```
+
+All create operations are idempotent (safe to run multiple times). Destroy
+operations delete resources in reverse dependency order and tolerate not-found
+errors gracefully.
+
 ### Operational Debugging (`ops`)
 
 Convenience wrappers that run Cloud Workflows to interact with GKE clusters
@@ -127,12 +147,19 @@ cmd/gcphcpctl/        Entry point for the gcphcpctl binary
 pkg/
 ├── cli/              Root command, version, completion
 ├── infra/
-│   └── iam/          IAM infrastructure orchestration and CLI commands
+│   ├── iam/          IAM infrastructure orchestration and CLI commands
+│   └── network/      Network infrastructure orchestration and CLI commands
 ├── ops/              Operational commands (extractable as plugin)
-│   └── wf/           Workflow management subcommands
+│   ├── wf/           Workflow management subcommands
+│   ├── companion/    AI-powered pod analysis (Vertex AI)
+│   └── pam/          Privileged Access Manager commands
 ├── gcp/
 │   ├── iam/          Pure GCP IAM API client wrappers
-│   └── workflows/    Cloud Workflows API client
+│   ├── networking/   Pure GCP Compute networking API client wrappers
+│   ├── workflows/    Cloud Workflows API client
+│   ├── auditlog/     Cloud Audit Log client
+│   ├── cloudrun/     Cloud Run API client
+│   └── pam/          Privileged Access Manager API client
 ├── config/           Config file loading
 └── output/           Table and JSON output formatting
 hack/workflows/       Cloud Workflow YAML definitions
