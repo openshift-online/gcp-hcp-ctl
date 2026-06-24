@@ -149,7 +149,7 @@ make clean    # Remove build artifacts
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.25+
 - GCP credentials: `gcloud auth application-default login`
 - Cloud Workflows deployed in the target project/region
 

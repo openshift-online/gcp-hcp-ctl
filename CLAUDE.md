@@ -47,7 +47,7 @@ All cluster interactions go through Cloud Workflows (Zero Operator Access). Work
 
 ## Code Conventions
 
-- Go 1.24+ required
+- Go 1.25+ required
 - GCP credentials via `gcloud auth application-default login`
 - Configuration priority: CLI flags > environment variables > config file (`~/.gcphcpctl/config.yaml`)
 - Version info injected via `-ldflags` at build time (see `Makefile`)
