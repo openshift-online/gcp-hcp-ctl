@@ -29,6 +29,24 @@ func TestLoad_ValidConfig(t *testing.T) {
 	}
 }
 
+func TestLoad_APIConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "api_endpoint: https://api.example.com\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.APIEndpoint != "https://api.example.com" {
+		t.Errorf("expected api_endpoint 'https://api.example.com', got %q", cfg.APIEndpoint)
+	}
+}
+
 func TestLoad_PartialConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

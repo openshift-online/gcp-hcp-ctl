@@ -13,9 +13,10 @@ import (
 
 // Config holds the CLI configuration loaded from config file.
 type Config struct {
-	Project string `yaml:"project"`
-	Region  string `yaml:"region"`
-	Output  string `yaml:"output"`
+	Project     string `yaml:"project"`
+	Region      string `yaml:"region"`
+	Output      string `yaml:"output"`
+	APIEndpoint string `yaml:"api_endpoint"`
 }
 
 // DefaultConfigDir returns the default config directory path.
