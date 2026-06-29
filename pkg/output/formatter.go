@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Format represents an output format.
@@ -39,9 +41,22 @@ func PrintJSON(w io.Writer, data interface{}) error {
 	return enc.Encode(data)
 }
 
+// PrintYAML writes data as YAML to the writer.
+func PrintYAML(w io.Writer, data interface{}) error {
+	enc := yaml.NewEncoder(w)
+	enc.SetIndent(2)
+	if err := enc.Encode(data); err != nil {
+		_ = enc.Close()
+		return err
+	}
+	return enc.Close()
+}
+
 // PrintResult formats and prints an execution result based on the output format.
 func PrintResult(w io.Writer, format Format, data interface{}) error {
 	switch format {
+	case FormatYAML:
+		return PrintYAML(w, data)
 	case FormatJSON:
 		return PrintJSON(w, data)
 	default:

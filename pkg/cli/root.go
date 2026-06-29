@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/cluster"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/config"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/iam"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/network"
@@ -18,6 +19,7 @@ var (
 	outputFormat string
 	configPath   string
 	apiEndpoint  string
+	oidcEndpoint string
 )
 
 var rootCmd = &cobra.Command{
@@ -54,6 +56,9 @@ func loadConfig(cmd *cobra.Command) error {
 	if !cmd.Flags().Changed("api-endpoint") && apiEndpoint == "" && cfg.APIEndpoint != "" {
 		apiEndpoint = cfg.APIEndpoint
 	}
+	if !cmd.Flags().Changed("oidc-endpoint") && oidcEndpoint == "" && cfg.OIDCEndpoint != "" {
+		oidcEndpoint = cfg.OIDCEndpoint
+	}
 
 	return nil
 }
@@ -64,10 +69,13 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text, json, yaml")
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Config file path (default: ~/.gcphcpctl/config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&apiEndpoint, "api-endpoint", os.Getenv("GCPHCPCTL_API_ENDPOINT"), "HyperFleet API endpoint URL (env: GCPHCPCTL_API_ENDPOINT)")
+	rootCmd.PersistentFlags().StringVar(&oidcEndpoint, "oidc-endpoint", os.Getenv("GCPHCPCTL_OIDC_ENDPOINT"), "OIDC issuer base URL (env: GCPHCPCTL_OIDC_ENDPOINT)")
 
+	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(ops.NewOpsCmd())
 	rootCmd.AddCommand(iam.NewIAMCmd())
 	rootCmd.AddCommand(network.NewNetworkCmd())
+	rootCmd.AddCommand(cluster.NewClusterCmd())
 }
 
 // Execute runs the root command.
@@ -78,10 +86,3 @@ func Execute() error {
 	}
 	return nil
 }
-
-func getProject() string      { return project }
-func getRegion() string       { return region }
-func getOutputFormat() string { return outputFormat }
-
-// GetAPIEndpoint returns the configured HyperFleet API endpoint URL.
-func GetAPIEndpoint() string { return apiEndpoint }
