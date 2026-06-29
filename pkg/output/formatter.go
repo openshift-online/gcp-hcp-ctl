@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Format represents an output format.
@@ -36,6 +38,14 @@ func ParseFormat(s string) Format {
 func PrintJSON(w io.Writer, data interface{}) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
+	return enc.Encode(data)
+}
+
+// PrintYAML writes data as YAML to the writer.
+func PrintYAML(w io.Writer, data interface{}) error {
+	enc := yaml.NewEncoder(w)
+	defer enc.Close()
+	enc.SetIndent(2)
 	return enc.Encode(data)
 }
 
