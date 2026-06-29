@@ -16,7 +16,8 @@ type Config struct {
 	Project     string `yaml:"project"`
 	Region      string `yaml:"region"`
 	Output      string `yaml:"output"`
-	APIEndpoint string `yaml:"api_endpoint"`
+	APIEndpoint  string `yaml:"api_endpoint"`
+	OIDCEndpoint string `yaml:"oidc_endpoint"`
 }
 
 // DefaultConfigDir returns the default config directory path.
