@@ -1,0 +1,23 @@
+{
+  "name": "hyperfleet-gcp-api-spec",
+  "version": "1.0.15",
+  "type": "module",
+  "packageManager": "npm@11.6.2+sha512.ee22b335fcbc95662cdf3ab8a053daf045d9cf9c6df6040d28965abb707512b2c16fa6c5eec049d34c74f78f390cebd14f697919eadb97756564d4f9eccc4954",
+  "scripts": {
+    "build": "./build-schema.sh"
+  },
+  "dependencies": {
+    "hyperfleet": "github:openshift-hyperfleet/hyperfleet-api-spec#main"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "6.15.1",
+    "@typespec/compiler": "^1.6.0",
+    "@typespec/http": "^1.6.0",
+    "@typespec/openapi": "^1.6.0",
+    "@typespec/openapi3": "^1.6.0",
+    "@typespec/rest": "^0.82.0",
+    "@typespec/versioning": "^0.82.0",
+    "api-spec-converter": "^2.12.0",
+    "swagger2openapi": "^7.0.8"
+  }
+}
