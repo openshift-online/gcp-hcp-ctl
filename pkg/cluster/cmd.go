@@ -47,6 +47,7 @@ func NewClusterCmd() *cobra.Command {
 	clusterCmd.AddCommand(newGetCmd())
 	clusterCmd.AddCommand(newListCmd())
 	clusterCmd.AddCommand(newDeleteCmd())
+	clusterCmd.AddCommand(newLoginCmd())
 
 	return clusterCmd
 }

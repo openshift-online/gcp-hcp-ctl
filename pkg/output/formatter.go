@@ -44,9 +44,12 @@ func PrintJSON(w io.Writer, data interface{}) error {
 // PrintYAML writes data as YAML to the writer.
 func PrintYAML(w io.Writer, data interface{}) error {
 	enc := yaml.NewEncoder(w)
-	defer enc.Close()
 	enc.SetIndent(2)
-	return enc.Encode(data)
+	if err := enc.Encode(data); err != nil {
+		_ = enc.Close()
+		return err
+	}
+	return enc.Close()
 }
 
 // PrintResult formats and prints an execution result based on the output format.

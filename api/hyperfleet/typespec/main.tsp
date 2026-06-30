@@ -17,6 +17,7 @@ import "./models/wifconfig/model.tsp";
 import "hyperfleet/shared/services/clusters.tsp";
 import "hyperfleet/shared/services/nodepools.tsp";
 import "./services/channels.tsp";
+import "./services/statuses.tsp";
 import "./services/versions.tsp";
 import "./services/wifconfigs.tsp";
 
