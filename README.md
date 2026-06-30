@@ -26,7 +26,7 @@ export GCPHCPCTL_REGION=us-central1
 
 ### Cluster Lifecycle (`cluster`)
 
-Create, inspect, list, and delete HyperFleet clusters via the HyperFleet API.
+Create, inspect, list, delete, and log in to HyperFleet clusters via the HyperFleet API.
 
 ```bash
 # Create a cluster from pre-provisioned IAM and network configs
@@ -56,6 +56,12 @@ gcphcpctl cluster list -o json
 
 # Delete a cluster (requires confirmation)
 gcphcpctl cluster delete my-cluster --confirm
+
+# Log in to a cluster (configures kubeconfig with gcloud exec auth)
+gcphcpctl cluster login my-cluster
+
+# Log in with a custom kubeconfig path
+gcphcpctl cluster login my-cluster --kubeconfig ~/.kube/hyperfleet
 ```
 
 Cluster commands require `--api-endpoint` (or `GCPHCPCTL_API_ENDPOINT` / `api_endpoint` in config) pointing to the HyperFleet API.
@@ -184,7 +190,7 @@ Config file location: `~/.gcphcpctl/config.yaml`
 cmd/gcphcpctl/        Entry point for the gcphcpctl binary
 pkg/
 ├── cli/              Root command, version, completion
-├── cluster/          Cluster lifecycle commands (create, get, list, delete)
+├── cluster/          Cluster lifecycle commands (create, get, list, delete, login)
 ├── auth/             Authentication and token management
 ├── hyperfleet/       Generated HyperFleet API client (oapi-codegen)
 ├── infra/
@@ -225,12 +231,14 @@ make clean    # Remove build artifacts
 
 The CLI has the following command categories:
 
-- **Cluster lifecycle commands** (`cluster`): Create, inspect, list, and delete
-  clusters via the HyperFleet API. The `cluster create` flow supports two modes:
-  assembling from pre-provisioned IAM and network config files, or automatic
-  infrastructure provisioning via `--setup-infra`. Cluster lookup supports both
-  name and ID. The generated API client lives in `pkg/hyperfleet/` (produced by
-  oapi-codegen from the OpenAPI spec).
+- **Cluster lifecycle commands** (`cluster`): Create, inspect, list, delete, and
+  login to clusters via the HyperFleet API. The `cluster create` flow supports
+  two modes: assembling from pre-provisioned IAM and network config files, or
+  automatic infrastructure provisioning via `--setup-infra`. The `cluster login`
+  command configures a kubeconfig context with gcloud exec-based authentication
+  by resolving the cluster's API endpoint from adapter status data. Cluster
+  lookup supports both name and ID. The generated API client lives in
+  `pkg/hyperfleet/` (produced by oapi-codegen from the OpenAPI spec).
 
 - **Infrastructure commands** (`iam`, `network`): Provision and tear down GCP
   resources for HyperShift clusters. These live under `pkg/infra/` for

@@ -24,7 +24,7 @@ func NewClusterCmd() *cobra.Command {
 	clusterCmd = &cobra.Command{
 		Use:   "cluster",
 		Short: "Manage HyperFleet clusters",
-		Long:  `Create, get, list, and delete HyperFleet clusters via the HyperFleet API.`,
+		Long:  `Create, get, list, delete, and log in to HyperFleet clusters via the HyperFleet API.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if parent := clusterCmd.Parent(); parent != nil && parent.PersistentPreRunE != nil {
 				if err := parent.PersistentPreRunE(cmd, args); err != nil {
@@ -48,6 +48,7 @@ func NewClusterCmd() *cobra.Command {
 	clusterCmd.AddCommand(newGetCmd())
 	clusterCmd.AddCommand(newListCmd())
 	clusterCmd.AddCommand(newDeleteCmd())
+	clusterCmd.AddCommand(newLoginCmd())
 
 	return clusterCmd
 }
@@ -237,12 +238,12 @@ func deriveClusterStatus(c *hyperfleet.Cluster) (phase, detail string) {
 	reconciled := findCondition(conditions, "Reconciled")
 	lastKnown := findCondition(conditions, "LastKnownReconciled")
 
-	if reconciled != nil && reconciled.Status == "True" {
+	if reconciled != nil && reconciled.Status == hyperfleet.ResourceConditionStatusTrue {
 		return "Ready", ""
 	}
 
-	if reconciled != nil && reconciled.Status == "False" {
-		if lastKnown != nil && lastKnown.Status == "True" {
+	if reconciled != nil && reconciled.Status == hyperfleet.ResourceConditionStatusFalse {
+		if lastKnown != nil && lastKnown.Status == hyperfleet.ResourceConditionStatusTrue {
 			return "Degraded", conditionSummary(reconciled, c.Generation)
 		}
 
