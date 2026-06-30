@@ -6,6 +6,7 @@ import (
 
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/config"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/iam"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/network"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops"
 
 	"github.com/spf13/cobra"
@@ -66,6 +67,7 @@ func init() {
 
 	rootCmd.AddCommand(ops.NewOpsCmd())
 	rootCmd.AddCommand(iam.NewIAMCmd())
+	rootCmd.AddCommand(network.NewNetworkCmd())
 }
 
 // Execute runs the root command.
