@@ -13,6 +13,27 @@ const (
 	BearerAuthScopes bearerAuthContextKey = "BearerAuth.Scopes"
 )
 
+// Defines values for AdapterConditionStatus.
+const (
+	AdapterConditionStatusFalse   AdapterConditionStatus = "False"
+	AdapterConditionStatusTrue    AdapterConditionStatus = "True"
+	AdapterConditionStatusUnknown AdapterConditionStatus = "Unknown"
+)
+
+// Valid indicates whether the value is a known member of the AdapterConditionStatus enum.
+func (e AdapterConditionStatus) Valid() bool {
+	switch e {
+	case AdapterConditionStatusFalse:
+		return true
+	case AdapterConditionStatusTrue:
+		return true
+	case AdapterConditionStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ClusterPlatformSpecType.
 const (
 	ClusterPlatformSpecTypeGcp ClusterPlatformSpecType = "gcp"
@@ -102,16 +123,16 @@ func (e OrderDirection) Valid() bool {
 
 // Defines values for ResourceConditionStatus.
 const (
-	False ResourceConditionStatus = "False"
-	True  ResourceConditionStatus = "True"
+	ResourceConditionStatusFalse ResourceConditionStatus = "False"
+	ResourceConditionStatusTrue  ResourceConditionStatus = "True"
 )
 
 // Valid indicates whether the value is a known member of the ResourceConditionStatus enum.
 func (e ResourceConditionStatus) Valid() bool {
 	switch e {
-	case False:
+	case ResourceConditionStatusFalse:
 		return true
-	case True:
+	case ResourceConditionStatusTrue:
 		return true
 	default:
 		return false
@@ -155,6 +176,74 @@ func (e ValidationErrorConstraint) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AdapterCondition Condition in AdapterStatus
+// Used for standard Kubernetes condition types: "Available", "Applied", "Health", "Finalized"
+// Note: observed_generation is at AdapterStatus level, not per-condition,
+// since all conditions in one AdapterStatus share the same observed generation
+type AdapterCondition struct {
+	// LastTransitionTime When this condition last transitioned status (API-managed)
+	// Only updated when status changes (True/False), not when reason/message changes
+	LastTransitionTime time.Time `json:"last_transition_time"`
+
+	// Message Human-readable message
+	Message *string `json:"message,omitempty"`
+
+	// Reason Machine-readable reason code
+	Reason *string `json:"reason,omitempty"`
+
+	// Status Status value for adapter conditions
+	Status AdapterConditionStatus `json:"status"`
+
+	// Type Condition type
+	Type string `json:"type"`
+}
+
+// AdapterConditionStatus Status value for adapter conditions
+type AdapterConditionStatus string
+
+// AdapterStatus AdapterStatus represents the complete status report from an adapter
+// Contains multiple conditions, job metadata, and adapter-specific data
+type AdapterStatus struct {
+	// Adapter Adapter name (e.g., "validator", "dns", "provisioner")
+	Adapter string `json:"adapter"`
+
+	// Conditions Kubernetes-style conditions tracking adapter state
+	// Typically includes: Available, Applied, Health, Finalized
+	Conditions []AdapterCondition `json:"conditions"`
+
+	// CreatedTime When this adapter status was first created (API-managed)
+	CreatedTime time.Time `json:"created_time"`
+
+	// Data Adapter-specific data (structure varies by adapter type)
+	Data *map[string]interface{} `json:"data,omitempty"`
+
+	// LastReportTime When this adapter last reported its status (API-managed)
+	// Updated every time the adapter PUTs, even if conditions haven't changed
+	// Used by Sentinel to detect adapter liveness
+	LastReportTime time.Time `json:"last_report_time"`
+
+	// Metadata Job execution metadata
+	Metadata *struct {
+		Attempt       *int32     `json:"attempt,omitempty"`
+		CompletedTime *time.Time `json:"completed_time,omitempty"`
+		Duration      *string    `json:"duration,omitempty"`
+		JobName       *string    `json:"job_name,omitempty"`
+		JobNamespace  *string    `json:"job_namespace,omitempty"`
+		StartedTime   *time.Time `json:"started_time,omitempty"`
+	} `json:"metadata,omitempty"`
+
+	// ObservedGeneration Which generation of the resource this status reflects
+	ObservedGeneration int32 `json:"observed_generation"`
+}
+
+// AdapterStatusList List of adapter statuses with pagination metadata
+type AdapterStatusList struct {
+	Items []AdapterStatus `json:"items"`
+	Page  int32           `json:"page"`
+	Size  int32           `json:"size"`
+	Total int32           `json:"total"`
 }
 
 // BadRequestDetails RFC 9457 Problem Details for HTTP APIs

@@ -24,6 +24,48 @@ export GCPHCPCTL_REGION=us-central1
 
 ## Commands
 
+### Cluster Lifecycle (`cluster`)
+
+Create, inspect, list, delete, and log in to HyperFleet clusters via the HyperFleet API.
+
+```bash
+# Create a cluster from pre-provisioned IAM and network configs
+gcphcpctl cluster create my-cluster \
+  --iam-config-file iam-config.json \
+  --network-config-file network-config.json \
+  --version 4.22.0-rc.5 --channel-group candidate
+
+# Create a cluster with automatic infrastructure provisioning
+gcphcpctl cluster create my-cluster \
+  --setup-infra --project my-project \
+  --version 4.22.0-rc.5 --channel-group candidate
+
+# Dry run (show payload without creating)
+gcphcpctl cluster create my-cluster \
+  --iam-config-file iam-config.json \
+  --network-config-file network-config.json \
+  --dry-run
+
+# Get a cluster by name or ID
+gcphcpctl cluster get my-cluster
+gcphcpctl cluster get my-cluster -o json
+
+# List all clusters
+gcphcpctl cluster list
+gcphcpctl cluster list -o json
+
+# Delete a cluster (requires confirmation)
+gcphcpctl cluster delete my-cluster --confirm
+
+# Log in to a cluster (configures kubeconfig with gcloud exec auth)
+gcphcpctl cluster login my-cluster
+
+# Log in with a custom kubeconfig path
+gcphcpctl cluster login my-cluster --kubeconfig ~/.kube/hyperfleet
+```
+
+Cluster commands require `--api-endpoint` (or `GCPHCPCTL_API_ENDPOINT` / `api_endpoint` in config) pointing to the HyperFleet API.
+
 ### IAM Infrastructure for Hosted Clusters (`iam`)
 
 Create and destroy Workload Identity Federation (WIF) infrastructure for
@@ -134,8 +176,10 @@ Configuration priority: **CLI flags > environment variables > config file**.
 
 | Flag | Env Var | Config Key | Description |
 |------|---------|------------|-------------|
-| `--project` | `GCPHCPCTL_PROJECT` | `project` | GCP project ID (required) |
-| `--region` | `GCPHCPCTL_REGION` | `region` | GCP region (required) |
+| `--project` | `GCPHCPCTL_PROJECT` | `project` | GCP project ID |
+| `--region` | `GCPHCPCTL_REGION` | `region` | GCP region |
+| `--api-endpoint` | `GCPHCPCTL_API_ENDPOINT` | `api_endpoint` | HyperFleet API endpoint (required for `cluster` commands) |
+| `--oidc-endpoint` | `GCPHCPCTL_OIDC_ENDPOINT` | `oidc_endpoint` | OIDC issuer base URL (required for `cluster create`) |
 | `--output` / `-o` | - | `output` | Output format: `text`, `json` |
 
 Config file location: `~/.gcphcpctl/config.yaml`
@@ -146,6 +190,9 @@ Config file location: `~/.gcphcpctl/config.yaml`
 cmd/gcphcpctl/        Entry point for the gcphcpctl binary
 pkg/
 ├── cli/              Root command, version, completion
+├── cluster/          Cluster lifecycle commands (create, get, list, delete, login)
+├── auth/             Authentication and token management
+├── hyperfleet/       Generated HyperFleet API client (oapi-codegen)
 ├── infra/
 │   ├── iam/          IAM infrastructure orchestration and CLI commands
 │   └── network/      Network infrastructure orchestration and CLI commands
@@ -182,7 +229,16 @@ make clean    # Remove build artifacts
 
 ## Architecture
 
-The CLI currently has the following command categories:
+The CLI has the following command categories:
+
+- **Cluster lifecycle commands** (`cluster`): Create, inspect, list, delete, and
+  login to clusters via the HyperFleet API. The `cluster create` flow supports
+  two modes: assembling from pre-provisioned IAM and network config files, or
+  automatic infrastructure provisioning via `--setup-infra`. The `cluster login`
+  command configures a kubeconfig context with gcloud exec-based authentication
+  by resolving the cluster's API endpoint from adapter status data. Cluster
+  lookup supports both name and ID. The generated API client lives in
+  `pkg/hyperfleet/` (produced by oapi-codegen from the OpenAPI spec).
 
 - **Infrastructure commands** (`iam`, `network`): Provision and tear down GCP
   resources for HyperShift clusters. These live under `pkg/infra/` for
@@ -197,8 +253,8 @@ The CLI currently has the following command categories:
   point exists at `cmd/ops/main.go` for when that separation is needed.
 
 All commands inherit global `--project` and `--region` flags from the root
-command. Configuration follows the priority: CLI flags > environment variables
-> config file.
+command. Cluster commands additionally require `--api-endpoint`. Configuration
+follows the priority: CLI flags > environment variables > config file.
 
 ## Related Repositories
 
