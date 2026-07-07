@@ -66,6 +66,36 @@ gcphcpctl cluster login my-cluster --kubeconfig ~/.kube/hyperfleet
 
 Cluster commands require `--api-endpoint` (or `GCPHCPCTL_API_ENDPOINT` / `api_endpoint` in config) pointing to the HyperFleet API.
 
+### Nodepool Management (`nodepool`)
+
+Create, inspect, list, scale, and delete nodepools via the HyperFleet API.
+
+```bash
+# Create a nodepool in a cluster
+gcphcpctl nodepool create my-nodepool --cluster my-cluster --replicas 2
+gcphcpctl nodepool create workers --cluster my-cluster \
+  --replicas 3 --instance-type n2-standard-8 --disk-size 200
+gcphcpctl nodepool create workers --cluster my-cluster \
+  --replicas 2 --version 4.22.0-rc.5 --channel-group candidate
+
+# Get a nodepool by name or ID
+gcphcpctl nodepool get my-nodepool
+gcphcpctl nodepool get my-nodepool -o json
+
+# List all nodepools (or filter by cluster)
+gcphcpctl nodepool list
+gcphcpctl nodepool list --cluster my-cluster
+gcphcpctl nodepool list -o json
+
+# Scale a nodepool
+gcphcpctl nodepool scale my-nodepool --replicas 5
+
+# Delete a nodepool (requires confirmation)
+gcphcpctl nodepool delete my-nodepool --confirm
+```
+
+Nodepool commands require `--api-endpoint` (or `GCPHCPCTL_API_ENDPOINT` / `api_endpoint` in config) pointing to the HyperFleet API.
+
 ### IAM Infrastructure for Hosted Clusters (`iam`)
 
 Create and destroy Workload Identity Federation (WIF) infrastructure for
@@ -180,7 +210,7 @@ Configuration priority: **CLI flags > environment variables > config file**.
 | `--region` | `GCPHCPCTL_REGION` | `region` | GCP region |
 | `--api-endpoint` | `GCPHCPCTL_API_ENDPOINT` | `api_endpoint` | HyperFleet API endpoint (required for `cluster` commands) |
 | `--oidc-endpoint` | `GCPHCPCTL_OIDC_ENDPOINT` | `oidc_endpoint` | OIDC issuer base URL (required for `cluster create`) |
-| `--output` / `-o` | - | `output` | Output format: `text`, `json` |
+| `--output` / `-o` | - | `output` | Output format: `text`, `json`, `yaml` |
 
 Config file location: `~/.gcphcpctl/config.yaml`
 
@@ -191,6 +221,7 @@ cmd/gcphcpctl/        Entry point for the gcphcpctl binary
 pkg/
 ├── cli/              Root command, version, completion
 ├── cluster/          Cluster lifecycle commands (create, get, list, delete, login)
+├── nodepool/         Nodepool commands (create, get, list, scale, delete)
 ├── auth/             Authentication and token management
 ├── hyperfleet/       Generated HyperFleet API client (oapi-codegen)
 ├── infra/
@@ -239,6 +270,11 @@ The CLI has the following command categories:
   by resolving the cluster's API endpoint from adapter status data. Cluster
   lookup supports both name and ID. The generated API client lives in
   `pkg/hyperfleet/` (produced by oapi-codegen from the OpenAPI spec).
+
+- **Nodepool commands** (`nodepool`): Create, inspect, list, scale, and delete
+  nodepools within clusters. Nodepools share the same authenticated client setup,
+  output formatting (`text`/`json`/`yaml`), and name-or-ID resolution patterns
+  as the cluster commands.
 
 - **Infrastructure commands** (`iam`, `network`): Provision and tear down GCP
   resources for HyperShift clusters. These live under `pkg/infra/` for
