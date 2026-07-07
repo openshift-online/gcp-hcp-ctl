@@ -31,13 +31,13 @@ func retryWithBackoff(ctx context.Context, logger logr.Logger, operationName str
 
 		if err == nil {
 			if attempt > 1 {
-				logger.Info("Operation succeeded after retry", "operation", operationName, "attempts", attempt)
+				logger.V(1).Info("Operation succeeded after retry", "operation", operationName, "attempts", attempt)
 			}
 			return nil
 		}
 
 		if !isTransientIAMError(err) {
-			logger.Info("Operation failed with non-transient error", "operation", operationName, "error", err)
+			logger.V(1).Info("Operation failed with non-transient error", "operation", operationName, "error", err)
 			return err
 		}
 
@@ -52,7 +52,7 @@ func retryWithBackoff(ctx context.Context, logger logr.Logger, operationName str
 
 		jitter := time.Duration(float64(backoff) * (0.75 + rand.Float64()*0.5))
 
-		logger.Info("Retrying operation due to IAM propagation delay",
+		logger.V(1).Info("Retrying operation due to IAM propagation delay",
 			"operation", operationName,
 			"attempt", attempt,
 			"backoff", jitter,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -50,6 +51,13 @@ All operations are idempotent and safe to run multiple times.`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			opts.InfraID = args[0]
 			opts.ProjectID, _ = cmd.Flags().GetString("project")
+
+			if opts.OIDCIssuerURL == "" {
+				if base, _ := cmd.Flags().GetString("oidc-endpoint"); base != "" {
+					opts.OIDCIssuerURL = fmt.Sprintf("%s/%s", strings.TrimRight(base, "/"), opts.InfraID)
+				}
+			}
+
 			return opts.ValidateInputs()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -60,7 +68,7 @@ All operations are idempotent and safe to run multiple times.`,
 
 	cmd.Flags().StringVar(&opts.ClusterOIDCJWKSFile, "oidc-jwks-file", "", "Path to a local JSON file containing OIDC provider's public key in JWKS format")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", "", "Path to output JSON file with GSA details (default: stdout)")
-	cmd.Flags().StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", "", "OIDC issuer URL for WIF provider (defaults to https://hypershift-<infra-id>-oidc)")
+	cmd.Flags().StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", "", "OIDC issuer URL for WIF provider (defaults to {oidc-endpoint}/{infra-id})")
 
 	return cmd
 }
