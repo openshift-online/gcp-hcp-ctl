@@ -100,17 +100,17 @@ func (m *Manager) SetOIDCIssuerURL(url string) {
 
 func (m *Manager) GetProjectNumber(ctx context.Context) (string, error) {
 	if m.projectNumber != "" {
-		m.logger.Info("Using existing project number", "projectID", m.projectID, "projectNumber", m.projectNumber)
+		m.logger.V(1).Info("Using existing project number", "projectID", m.projectID, "projectNumber", m.projectNumber)
 		return m.projectNumber, nil
 	}
-	m.logger.Info("Retrieving project number", "projectID", m.projectID)
+	m.logger.V(1).Info("Retrieving project number", "projectID", m.projectID)
 
 	projectNumber, err := m.client.GetProjectNumber(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve project number for %s: %w", m.projectID, err)
 	}
 
-	m.logger.Info("Successfully retrieved project number", "projectNumber", projectNumber)
+	m.logger.V(1).Info("Retrieved project number", "projectNumber", projectNumber)
 	m.projectNumber = fmt.Sprintf("%d", projectNumber)
 	return m.projectNumber, nil
 }
@@ -121,7 +121,7 @@ func (m *Manager) GetProjectNumber(ctx context.Context) (string, error) {
 
 func (m *Manager) CreateWorkloadIdentityPool(ctx context.Context) (string, error) {
 	poolID := m.formatPoolID()
-	m.logger.Info("Creating Workload Identity Pool", "poolID", poolID, "projectID", m.projectID)
+	m.logger.Info("Creating Workload Identity Pool", "poolID", poolID)
 
 	pool := &iamapi.WorkloadIdentityPool{
 		Description: fmt.Sprintf("Workload Identity Pool for HyperShift cluster %s", m.infraID),
@@ -132,13 +132,13 @@ func (m *Manager) CreateWorkloadIdentityPool(ctx context.Context) (string, error
 	err := m.client.CreateWorkloadIdentityPool(ctx, parent, poolID, pool)
 	if err != nil {
 		if isAlreadyExistsError(err) {
-			m.logger.Info("Workload Identity Pool already exists, checking state", "poolID", poolID)
+			m.logger.V(1).Info("Workload Identity Pool already exists, checking state", "poolID", poolID)
 			return m.ensurePoolUsable(ctx, parent, poolID)
 		}
 		return "", fmt.Errorf("failed to create Workload Identity Pool: %w", err)
 	}
 
-	m.logger.Info("Successfully created Workload Identity Pool", "poolID", poolID)
+	m.logger.Info("Created Workload Identity Pool", "poolID", poolID)
 	return poolID, nil
 }
 
@@ -155,7 +155,7 @@ func (m *Manager) ensurePoolUsable(ctx context.Context, parent, poolID string) (
 		if err := m.client.UndeleteWorkloadIdentityPool(ctx, poolResource); err != nil {
 			return "", fmt.Errorf("failed to undelete pool: %w", err)
 		}
-		m.logger.Info("Successfully undeleted pool", "poolID", poolID)
+		m.logger.V(1).Info("Undeleted pool", "poolID", poolID)
 
 		existingPool, err = m.client.GetWorkloadIdentityPool(ctx, poolResource)
 		if err != nil {
@@ -169,16 +169,16 @@ func (m *Manager) ensurePoolUsable(ctx context.Context, parent, poolID string) (
 		if err := m.client.PatchWorkloadIdentityPool(ctx, poolResource, existingPool, "disabled"); err != nil {
 			return "", fmt.Errorf("failed to enable pool: %w", err)
 		}
-		m.logger.Info("Successfully enabled pool", "poolID", poolID)
+		m.logger.V(1).Info("Enabled pool", "poolID", poolID)
 	}
 
-	m.logger.Info("Pool is usable", "poolID", poolID)
+	m.logger.V(1).Info("Pool is usable", "poolID", poolID)
 	return poolID, nil
 }
 
 func (m *Manager) CreateOIDCProvider(ctx context.Context) (string, string, error) {
 	providerID := m.formatProviderID()
-	m.logger.Info("Creating OIDC Provider", "providerID", providerID, "poolID", m.formatPoolID())
+	m.logger.Info("Creating OIDC Provider", "providerID", providerID)
 
 	var (
 		jwksJson string
@@ -189,13 +189,13 @@ func (m *Manager) CreateOIDCProvider(ctx context.Context) (string, string, error
 		if err != nil {
 			return "", "", err
 		}
-		m.logger.Info("Using inline JWKS for OIDC provider")
+		m.logger.V(1).Info("Using inline JWKS for OIDC provider")
 	} else {
-		m.logger.Info("No JWKS file provided; GCP will fetch keys from issuer URL")
+		m.logger.V(1).Info("No JWKS file provided; GCP will fetch keys from issuer URL")
 	}
 
 	issuerURI := m.formatIssuerURI()
-	m.logger.Info("Using OIDC issuer URI", "issuerURI", issuerURI)
+	m.logger.V(1).Info("Using OIDC issuer URI", "issuerURI", issuerURI)
 
 	providerAudience := m.formatProviderAudience()
 	oidc := &iamapi.Oidc{
@@ -219,13 +219,13 @@ func (m *Manager) CreateOIDCProvider(ctx context.Context) (string, string, error
 	parent := m.formatPoolParent()
 	if err := m.client.CreateWorkloadIdentityProvider(ctx, parent, providerID, provider); err != nil {
 		if isAlreadyExistsError(err) {
-			m.logger.Info("OIDC Provider already exists, checking state and configuration", "providerID", providerID)
+			m.logger.V(1).Info("OIDC Provider already exists, checking state", "providerID", providerID)
 			return m.ensureProviderUsable(ctx, providerID, provider, providerAudience)
 		}
 		return "", "", fmt.Errorf("failed to create OIDC Provider: %w", err)
 	}
 
-	m.logger.Info("Successfully created OIDC Provider", "providerID", providerID, "audience", providerAudience)
+	m.logger.Info("Created OIDC Provider", "providerID", providerID)
 	return providerID, providerAudience, nil
 }
 
@@ -242,7 +242,7 @@ func (m *Manager) ensureProviderUsable(ctx context.Context, providerID string, e
 		if err := m.client.UndeleteWorkloadIdentityProvider(ctx, providerResource); err != nil {
 			return "", "", fmt.Errorf("failed to undelete provider: %w", err)
 		}
-		m.logger.Info("Successfully undeleted provider", "providerID", providerID)
+		m.logger.V(1).Info("Undeleted provider", "providerID", providerID)
 
 		existingProvider, err = m.client.GetWorkloadIdentityProvider(ctx, providerResource)
 		if err != nil {
@@ -254,7 +254,7 @@ func (m *Manager) ensureProviderUsable(ctx context.Context, providerID string, e
 
 	var issuerMismatch, jwksMismatch bool
 	if existingProvider.Oidc == nil || expectedProvider.Oidc == nil {
-		m.logger.Info("Provider has nil OIDC config, treating as mismatch",
+		m.logger.V(1).Info("Provider has nil OIDC config, treating as mismatch",
 			"providerID", providerID,
 			"existingOidcNil", existingProvider.Oidc == nil,
 			"expectedOidcNil", expectedProvider.Oidc == nil)
@@ -268,8 +268,8 @@ func (m *Manager) ensureProviderUsable(ctx context.Context, providerID string, e
 	needsUpdate := disabledMismatch || issuerMismatch || jwksMismatch
 
 	if needsUpdate {
-		m.logger.Info("Provider needs updates",
-			"providerID", providerID,
+		m.logger.Info("Updating provider configuration", "providerID", providerID)
+		m.logger.V(1).Info("Provider mismatch details",
 			"disabledMismatch", disabledMismatch,
 			"issuerMismatch", issuerMismatch,
 			"jwksMismatch", jwksMismatch)
@@ -279,9 +279,9 @@ func (m *Manager) ensureProviderUsable(ctx context.Context, providerID string, e
 		if err := m.client.UpdateWorkloadIdentityProvider(ctx, providerResource, expectedProvider, "disabled,oidc.jwks_json,oidc.issuer_uri"); err != nil {
 			return "", "", fmt.Errorf("failed to update provider: %w", err)
 		}
-		m.logger.Info("Successfully updated provider", "providerID", providerID)
+		m.logger.V(1).Info("Updated provider", "providerID", providerID)
 	} else {
-		m.logger.Info("Provider is already usable with correct configuration", "providerID", providerID)
+		m.logger.V(1).Info("Provider is already usable", "providerID", providerID)
 	}
 
 	return providerID, providerAudience, nil
@@ -298,7 +298,7 @@ func (m *Manager) CreateServiceAccounts(ctx context.Context) (map[string]string,
 	}
 
 	for _, def := range definitions {
-		m.logger.Info("Processing service account", "name", def.Name)
+		m.logger.V(1).Info("Processing service account", "name", def.Name)
 
 		var email string
 		err = retryWithBackoff(ctx, m.logger, fmt.Sprintf("createServiceAccount-%s", def.Name), func() error {
@@ -329,7 +329,7 @@ func (m *Manager) CreateServiceAccounts(ctx context.Context) (map[string]string,
 			}
 		}
 
-		m.logger.Info("Successfully configured service account", "name", def.Name, "email", email)
+		m.logger.Info("Configured service account", "name", def.Name, "email", email)
 	}
 
 	return serviceAccountEmails, nil
@@ -339,7 +339,7 @@ func (m *Manager) createServiceAccount(ctx context.Context, def ServiceAccountDe
 	accountID := m.formatServiceAccountID(def.Name)
 	email := m.formatServiceAccountEmail(def.Name)
 
-	m.logger.Info("Creating service account", "accountID", accountID, "displayName", def.DisplayName)
+	m.logger.V(1).Info("Creating service account", "accountID", accountID)
 
 	sa := &iamapi.ServiceAccount{
 		DisplayName: def.DisplayName,
@@ -349,13 +349,13 @@ func (m *Manager) createServiceAccount(ctx context.Context, def ServiceAccountDe
 	_, err := m.client.CreateServiceAccount(ctx, accountID, sa)
 	if err != nil {
 		if isAlreadyExistsError(err) {
-			m.logger.Info("Service account already exists", "email", email)
+			m.logger.V(1).Info("Service account already exists", "email", email)
 			return email, nil
 		}
 		return "", err
 	}
 
-	m.logger.Info("Successfully created service account", "email", email)
+	m.logger.V(1).Info("Created service account", "email", email)
 	return email, nil
 }
 
@@ -365,7 +365,7 @@ func (m *Manager) assignRoles(ctx context.Context, serviceAccountEmail string, r
 	}
 
 	member := m.formatServiceAccountMember(serviceAccountEmail)
-	m.logger.Info("Assigning project IAM roles", "member", member, "roles", roles)
+	m.logger.V(1).Info("Assigning project IAM roles", "member", member, "roles", roles)
 
 	added, err := m.client.AddProjectIAMRoles(ctx, member, roles)
 	if err != nil {
@@ -373,9 +373,9 @@ func (m *Manager) assignRoles(ctx context.Context, serviceAccountEmail string, r
 	}
 
 	if len(added) > 0 {
-		m.logger.Info("Added project IAM role bindings", "member", member, "added", added)
+		m.logger.V(1).Info("Added project IAM role bindings", "member", member, "added", added)
 	} else {
-		m.logger.Info("All role bindings already exist", "member", member)
+		m.logger.V(1).Info("All role bindings already exist", "member", member)
 	}
 	return nil
 }
@@ -385,7 +385,7 @@ func (m *Manager) createWorkloadIdentityBinding(ctx context.Context, serviceAcco
 	resource := m.formatServiceAccountResource(serviceAccountEmail)
 	k8sSAName := fmt.Sprintf("%s/%s", k8sSA.Namespace, k8sSA.Name)
 
-	m.logger.Info("Checking WIF binding", "k8sSA", k8sSAName, "gsaEmail", serviceAccountEmail)
+	m.logger.V(1).Info("Checking WIF binding", "k8sSA", k8sSAName, "gsaEmail", serviceAccountEmail)
 
 	added, err := m.client.AddServiceAccountIAMRoles(ctx, resource, member, []string{workloadIdentityUserRole})
 	if err != nil {
@@ -393,9 +393,9 @@ func (m *Manager) createWorkloadIdentityBinding(ctx context.Context, serviceAcco
 	}
 
 	if len(added) > 0 {
-		m.logger.Info("Created WIF binding", "k8sSA", k8sSAName, "gsaEmail", serviceAccountEmail)
+		m.logger.V(1).Info("Created WIF binding", "k8sSA", k8sSAName, "gsaEmail", serviceAccountEmail)
 	} else {
-		m.logger.Info("WIF binding already exists", "k8sSA", k8sSAName, "gsaEmail", serviceAccountEmail)
+		m.logger.V(1).Info("WIF binding already exists", "k8sSA", k8sSAName, "gsaEmail", serviceAccountEmail)
 	}
 	return nil
 }
@@ -414,13 +414,13 @@ func (m *Manager) DeleteWorkloadIdentityPool(ctx context.Context) error {
 
 	if err := m.client.DeleteWorkloadIdentityPool(ctx, poolResource); err != nil {
 		if isNotFoundError(err) {
-			m.logger.Info("Workload Identity Pool not found, skipping deletion", "poolID", poolID)
+			m.logger.V(1).Info("Workload Identity Pool not found, skipping", "poolID", poolID)
 			return nil
 		}
 		return fmt.Errorf("failed to delete Workload Identity Pool: %w", err)
 	}
 
-	m.logger.Info("Successfully deleted Workload Identity Pool", "poolID", poolID)
+	m.logger.Info("Deleted Workload Identity Pool", "poolID", poolID)
 	return nil
 }
 
@@ -433,13 +433,13 @@ func (m *Manager) DeleteOIDCProvider(ctx context.Context) error {
 
 	if err := m.client.DeleteWorkloadIdentityProvider(ctx, providerResource); err != nil {
 		if isNotFoundError(err) {
-			m.logger.Info("OIDC Provider not found, skipping deletion", "providerID", providerID)
+			m.logger.V(1).Info("OIDC Provider not found, skipping", "providerID", providerID)
 			return nil
 		}
 		return fmt.Errorf("failed to delete OIDC Provider: %w", err)
 	}
 
-	m.logger.Info("Successfully deleted OIDC Provider", "providerID", providerID)
+	m.logger.Info("Deleted OIDC Provider", "providerID", providerID)
 	return nil
 }
 
@@ -454,7 +454,7 @@ func (m *Manager) DeleteServiceAccounts(ctx context.Context) error {
 
 	for _, def := range definitions {
 		email := m.formatServiceAccountEmail(def.Name)
-		m.logger.Info("Deleting service account", "name", def.Name, "email", email)
+		m.logger.V(1).Info("Deleting service account", "name", def.Name, "email", email)
 
 		if len(def.Roles) > 0 {
 			if err := m.removeRoles(ctx, email, def.Roles); err != nil {
@@ -468,9 +468,9 @@ func (m *Manager) DeleteServiceAccounts(ctx context.Context) error {
 				deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete service account %s: %w", email, err))
 				continue
 			}
-			m.logger.Info("Service account not found, skipping", "email", email)
+			m.logger.V(1).Info("Service account not found, skipping", "email", email)
 		} else {
-			m.logger.Info("Successfully deleted service account", "email", email)
+			m.logger.V(1).Info("Deleted service account", "email", email)
 		}
 	}
 
@@ -487,7 +487,7 @@ func (m *Manager) removeRoles(ctx context.Context, serviceAccountEmail string, r
 	}
 
 	member := m.formatServiceAccountMember(serviceAccountEmail)
-	m.logger.Info("Removing project IAM roles", "member", member, "roles", roles)
+	m.logger.V(1).Info("Removing project IAM roles", "member", member, "roles", roles)
 
 	removed, err := m.client.RemoveProjectIAMRoles(ctx, member, roles)
 	if err != nil {
@@ -495,9 +495,9 @@ func (m *Manager) removeRoles(ctx context.Context, serviceAccountEmail string, r
 	}
 
 	if len(removed) > 0 {
-		m.logger.Info("Removed project IAM role bindings", "member", member, "removed", removed)
+		m.logger.V(1).Info("Removed project IAM role bindings", "member", member, "removed", removed)
 	} else {
-		m.logger.Info("No role bindings found to remove", "member", member)
+		m.logger.V(1).Info("No role bindings found to remove", "member", member)
 	}
 	return nil
 }
@@ -589,12 +589,12 @@ func (m *Manager) compareJWKS(jwks1, jwks2 string) bool {
 	var obj1, obj2 map[string]any
 
 	if err := json.Unmarshal([]byte(jwks1), &obj1); err != nil {
-		m.logger.Info("Failed to parse existing JWKS JSON", "error", err)
+		m.logger.V(1).Info("Failed to parse existing JWKS JSON", "error", err)
 		return false
 	}
 
 	if err := json.Unmarshal([]byte(jwks2), &obj2); err != nil {
-		m.logger.Info("Failed to parse expected JWKS JSON", "error", err)
+		m.logger.V(1).Info("Failed to parse expected JWKS JSON", "error", err)
 		return false
 	}
 
@@ -602,7 +602,7 @@ func (m *Manager) compareJWKS(jwks1, jwks2 string) bool {
 	canonical2, err2 := json.Marshal(obj2)
 
 	if err1 != nil || err2 != nil {
-		m.logger.Info("Failed to marshal JWKS for comparison", "err1", err1, "err2", err2)
+		m.logger.V(1).Info("Failed to marshal JWKS for comparison", "err1", err1, "err2", err2)
 		return false
 	}
 

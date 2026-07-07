@@ -73,7 +73,11 @@ func newClientWithTokenSource(apiEndpoint string, ts *auth.TokenSource) (*hyperf
 }
 
 func clientFromCmd(cmd *cobra.Command) *hyperfleet.ClientWithResponses {
-	return cmd.Context().Value(clientKey).(*hyperfleet.ClientWithResponses)
+	client, ok := cmd.Context().Value(clientKey).(*hyperfleet.ClientWithResponses)
+	if !ok {
+		panic("bug: clientFromCmd called before PersistentPreRunE set the HyperFleet client")
+	}
+	return client
 }
 
 // resolveCluster looks up a cluster by name or ID. It first tries a

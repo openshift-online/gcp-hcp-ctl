@@ -8,6 +8,7 @@ import (
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/config"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/iam"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/network"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/nodepool"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops"
 
 	"github.com/spf13/cobra"
@@ -76,6 +77,7 @@ func init() {
 	rootCmd.AddCommand(iam.NewIAMCmd())
 	rootCmd.AddCommand(network.NewNetworkCmd())
 	rootCmd.AddCommand(cluster.NewClusterCmd())
+	rootCmd.AddCommand(nodepool.NewNodePoolCmd())
 }
 
 // Execute runs the root command.
