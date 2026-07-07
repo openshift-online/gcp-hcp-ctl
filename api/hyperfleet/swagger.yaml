@@ -1170,6 +1170,40 @@ paths:
       description: Patch a specific nodepool within a cluster
       operationId: patchNodePoolById
       summary: Patch nodepool by ID
+  '/api/hyperfleet/v1/clusters/{cluster_id}/statuses':
+    get:
+      produces:
+        - application/json
+        - application/problem+json
+      parameters:
+        - in: path
+          name: cluster_id
+          required: true
+          type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          schema:
+            $ref: '#/definitions/AdapterStatusList'
+        '401':
+          description: The request requires valid authentication credentials.
+          schema:
+            $ref: '#/definitions/UnauthorizedDetails'
+        '404':
+          description: The server cannot find the requested resource.
+          schema:
+            $ref: '#/definitions/NotFoundDetails'
+        default:
+          description: An unexpected error response.
+          schema:
+            $ref: '#/definitions/ProblemDetails'
+      security:
+        - BearerAuth: []
+      tags:
+        - Clusters
+      description: Returns all adapter status reports for the given cluster.
+      operationId: getClusterStatuses
+      summary: List adapter statuses for cluster
   /api/hyperfleet/v1/nodepools:
     get:
       produces:
@@ -1459,6 +1493,200 @@ paths:
       operationId: patchWifConfigById
       summary: Patch WIF config by ID
 definitions:
+  AdapterCondition:
+    description: >-
+      Condition in AdapterStatus
+
+      Used for standard Kubernetes condition types: "Available", "Applied",
+      "Health", "Finalized"
+
+      Note: observed_generation is at AdapterStatus level, not per-condition,
+
+      since all conditions in one AdapterStatus share the same observed
+      generation
+    properties:
+      last_transition_time:
+        description: >-
+          When this condition last transitioned status (API-managed)
+
+          Only updated when status changes (True/False), not when reason/message
+          changes
+        format: date-time
+        type: string
+      message:
+        description: Human-readable message
+        type: string
+      reason:
+        description: Machine-readable reason code
+        type: string
+      status:
+        $ref: '#/definitions/AdapterConditionStatus'
+      type:
+        description: Condition type
+        type: string
+    required:
+      - type
+      - last_transition_time
+      - status
+    type: object
+  AdapterConditionStatus:
+    description: Status value for adapter conditions
+    enum:
+      - 'True'
+      - 'False'
+      - Unknown
+    type: string
+  AdapterStatus:
+    description: |-
+      AdapterStatus represents the complete status report from an adapter
+      Contains multiple conditions, job metadata, and adapter-specific data
+    example:
+      adapter: adapter1
+      conditions:
+        - last_transition_time: '2021-01-01T10:00:00Z'
+          message: This adapter1 is available
+          reason: This adapter1 is available
+          status: 'True'
+          type: Available
+        - last_transition_time: '2021-01-01T10:00:00Z'
+          message: Adapter1 validation job applied successfully
+          reason: Validation job applied
+          status: 'True'
+          type: Applied
+        - last_transition_time: '2021-01-01T10:00:00Z'
+          message: All adapter1 runtime operations completed successfully
+          reason: All adapter1 operations completed successfully
+          status: 'True'
+          type: Health
+        - last_transition_time: '2021-01-01T10:00:00Z'
+          message: All resources deleted; cleanup confirmed
+          reason: All resources deleted; cleanup confirmed
+          status: 'True'
+          type: Finalized
+      created_time: '2021-01-01T10:00:00Z'
+      data:
+        validation_results:
+          failed: 0
+          passed: 30
+          total_tests: 30
+      last_report_time: '2021-01-01T10:02:00Z'
+      metadata:
+        attempt: 1
+        completed_time: '2021-01-01T10:02:00Z'
+        duration: 2m
+        job_name: validator-job-abc123
+        job_namespace: hyperfleet-system
+        started_time: '2021-01-01T10:00:00Z'
+      observed_generation: 1
+    properties:
+      adapter:
+        description: 'Adapter name (e.g., "validator", "dns", "provisioner")'
+        type: string
+      conditions:
+        description: |-
+          Kubernetes-style conditions tracking adapter state
+          Typically includes: Available, Applied, Health, Finalized
+        items:
+          $ref: '#/definitions/AdapterCondition'
+        type: array
+      created_time:
+        description: When this adapter status was first created (API-managed)
+        format: date-time
+        type: string
+      data:
+        additionalProperties: {}
+        description: Adapter-specific data (structure varies by adapter type)
+        type: object
+      last_report_time:
+        description: >-
+          When this adapter last reported its status (API-managed)
+
+          Updated every time the adapter PUTs, even if conditions haven't
+          changed
+
+          Used by Sentinel to detect adapter liveness
+        format: date-time
+        type: string
+      metadata:
+        description: Job execution metadata
+        properties:
+          attempt:
+            format: int32
+            type: integer
+          completed_time:
+            format: date-time
+            type: string
+          duration:
+            type: string
+          job_name:
+            type: string
+          job_namespace:
+            type: string
+          started_time:
+            format: date-time
+            type: string
+        type: object
+      observed_generation:
+        description: Which generation of the resource this status reflects
+        format: int32
+        type: integer
+    required:
+      - adapter
+      - observed_generation
+      - conditions
+      - created_time
+      - last_report_time
+    type: object
+  AdapterStatusList:
+    description: List of adapter statuses with pagination metadata
+    example:
+      items:
+        - adapter: adapter1
+          conditions:
+            - last_transition_time: '2021-01-01T10:00:00Z'
+              message: This adapter1 is available
+              reason: This adapter1 is available
+              status: 'True'
+              type: Available
+          created_time: '2021-01-01T10:00:00Z'
+          last_report_time: '2021-01-01T10:02:00Z'
+          metadata:
+            duration: 2m
+            job_name: validator-job-abc123
+          observed_generation: 1
+        - adapter: adapter2
+          conditions:
+            - last_transition_time: '2021-01-01T10:01:00Z'
+              message: This adapter2 is available
+              reason: This adapter2 is available
+              status: 'True'
+              type: Available
+          created_time: '2021-01-01T10:01:00Z'
+          last_report_time: '2021-01-01T10:01:30Z'
+          observed_generation: 1
+      page: 1
+      size: 2
+      total: 2
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/AdapterStatus'
+        type: array
+      page:
+        format: int32
+        type: integer
+      size:
+        format: int32
+        type: integer
+      total:
+        format: int32
+        type: integer
+    required:
+      - page
+      - size
+      - total
+      - items
+    type: object
   BadRequestDetails:
     allOf:
       - $ref: '#/definitions/ProblemDetails'

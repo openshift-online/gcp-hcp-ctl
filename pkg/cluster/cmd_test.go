@@ -84,7 +84,7 @@ func TestClusterStatus(t *testing.T) {
 		c := &hyperfleet.Cluster{
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "True"},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusTrue},
 				},
 			},
 		}
@@ -98,7 +98,7 @@ func TestClusterStatus(t *testing.T) {
 		c := &hyperfleet.Cluster{
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "False", Reason: &reason},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusFalse, Reason: &reason},
 				},
 			},
 		}
@@ -112,8 +112,8 @@ func TestClusterStatus(t *testing.T) {
 		c := &hyperfleet.Cluster{
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "False", Reason: &reason},
-					{Type: "LastKnownReconciled", Status: "True"},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusFalse, Reason: &reason},
+					{Type: "LastKnownReconciled", Status: hyperfleet.ResourceConditionStatusTrue},
 				},
 			},
 		}
@@ -128,8 +128,8 @@ func TestClusterStatus(t *testing.T) {
 		c := &hyperfleet.Cluster{
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "False", Reason: &reconciledReason},
-					{Type: "HcAdapterSuccessful", Status: "False", Reason: &adapterReason},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusFalse, Reason: &reconciledReason},
+					{Type: "HcAdapterSuccessful", Status: hyperfleet.ResourceConditionStatusFalse, Reason: &adapterReason},
 				},
 			},
 		}
@@ -144,7 +144,7 @@ func TestClusterStatus(t *testing.T) {
 			DeletedTime: &now,
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "True"},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusTrue},
 				},
 			},
 		}
@@ -157,7 +157,7 @@ func TestClusterStatus(t *testing.T) {
 		c := &hyperfleet.Cluster{
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Available", Status: "True"},
+					{Type: "Available", Status: hyperfleet.ResourceConditionStatusTrue},
 				},
 			},
 		}
@@ -172,7 +172,7 @@ func TestClusterStatusDetail(t *testing.T) {
 		c := &hyperfleet.Cluster{
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "True"},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusTrue},
 				},
 			},
 		}
@@ -208,7 +208,7 @@ func TestClusterStatusDetail(t *testing.T) {
 			Generation: 3,
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "False", Reason: &reason, ObservedGeneration: 2},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusFalse, Reason: &reason, ObservedGeneration: 2},
 				},
 			},
 		}
@@ -225,8 +225,8 @@ func TestClusterStatusDetail(t *testing.T) {
 			Generation: 1,
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "False", Reason: &reconciledReason, ObservedGeneration: 1},
-					{Type: "HcAdapterSuccessful", Status: "False", Reason: &adapterReason, ObservedGeneration: 1},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusFalse, Reason: &reconciledReason, ObservedGeneration: 1},
+					{Type: "HcAdapterSuccessful", Status: hyperfleet.ResourceConditionStatusFalse, Reason: &adapterReason, ObservedGeneration: 1},
 				},
 			},
 		}
@@ -241,7 +241,7 @@ func TestClusterStatusDetail(t *testing.T) {
 			Generation: 1,
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "False", ObservedGeneration: 1},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusFalse, ObservedGeneration: 1},
 				},
 			},
 		}
@@ -258,8 +258,8 @@ func TestClusterStatusDetail(t *testing.T) {
 			Generation: 1,
 			Status: hyperfleet.ClusterStatus{
 				Conditions: []hyperfleet.ResourceCondition{
-					{Type: "Reconciled", Status: "False", Reason: &reason, Message: &msg, ObservedGeneration: 1},
-					{Type: "LastKnownReconciled", Status: "True"},
+					{Type: "Reconciled", Status: hyperfleet.ResourceConditionStatusFalse, Reason: &reason, Message: &msg, ObservedGeneration: 1},
+					{Type: "LastKnownReconciled", Status: hyperfleet.ResourceConditionStatusTrue},
 				},
 			},
 		}

@@ -165,6 +165,9 @@ type ClientInterface interface {
 
 	PatchNodePoolById(ctx context.Context, clusterId string, nodepoolId string, body PatchNodePoolByIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetClusterStatuses request
+	GetClusterStatuses(ctx context.Context, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetNodePools request
 	GetNodePools(ctx context.Context, params *GetNodePoolsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -514,6 +517,18 @@ func (c *Client) PatchNodePoolByIdWithBody(ctx context.Context, clusterId string
 
 func (c *Client) PatchNodePoolById(ctx context.Context, clusterId string, nodepoolId string, body PatchNodePoolByIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPatchNodePoolByIdRequest(c.Server, clusterId, nodepoolId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetClusterStatuses(ctx context.Context, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetClusterStatusesRequest(c.Server, clusterId)
 	if err != nil {
 		return nil, err
 	}
@@ -1772,6 +1787,40 @@ func NewPatchNodePoolByIdRequestWithBody(server string, clusterId string, nodepo
 	return req, nil
 }
 
+// NewGetClusterStatusesRequest generates requests for GetClusterStatuses
+func NewGetClusterStatusesRequest(server string, clusterId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "cluster_id", clusterId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/hyperfleet/v1/clusters/%s/statuses", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetNodePoolsRequest generates requests for GetNodePools
 func NewGetNodePoolsRequest(server string, params *GetNodePoolsParams) (*http.Request, error) {
 	var err error
@@ -2276,6 +2325,9 @@ type ClientWithResponsesInterface interface {
 	PatchNodePoolByIdWithBodyWithResponse(ctx context.Context, clusterId string, nodepoolId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchNodePoolByIdResponse, error)
 
 	PatchNodePoolByIdWithResponse(ctx context.Context, clusterId string, nodepoolId string, body PatchNodePoolByIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchNodePoolByIdResponse, error)
+
+	// GetClusterStatusesWithResponse request
+	GetClusterStatusesWithResponse(ctx context.Context, clusterId string, reqEditors ...RequestEditorFn) (*GetClusterStatusesResponse, error)
 
 	// GetNodePoolsWithResponse request
 	GetNodePoolsWithResponse(ctx context.Context, params *GetNodePoolsParams, reqEditors ...RequestEditorFn) (*GetNodePoolsResponse, error)
@@ -2971,6 +3023,39 @@ func (r PatchNodePoolByIdResponse) ContentType() string {
 	return ""
 }
 
+type GetClusterStatusesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AdapterStatusList
+	ApplicationproblemJSON401     *UnauthorizedDetails
+	ApplicationproblemJSON404     *NotFoundDetails
+	ApplicationproblemJSONDefault *ProblemDetails
+}
+
+// Status returns HTTPResponse.Status
+func (r GetClusterStatusesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetClusterStatusesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetClusterStatusesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetNodePoolsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -3411,6 +3496,15 @@ func (c *ClientWithResponses) PatchNodePoolByIdWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParsePatchNodePoolByIdResponse(rsp)
+}
+
+// GetClusterStatusesWithResponse request returning *GetClusterStatusesResponse
+func (c *ClientWithResponses) GetClusterStatusesWithResponse(ctx context.Context, clusterId string, reqEditors ...RequestEditorFn) (*GetClusterStatusesResponse, error) {
+	rsp, err := c.GetClusterStatuses(ctx, clusterId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetClusterStatusesResponse(rsp)
 }
 
 // GetNodePoolsWithResponse request returning *GetNodePoolsResponse
@@ -4487,6 +4581,53 @@ func ParsePatchNodePoolByIdResponse(rsp *http.Response) (*PatchNodePoolByIdRespo
 			return nil, err
 		}
 		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemDetails
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetClusterStatusesResponse parses an HTTP response from a GetClusterStatusesWithResponse call
+func ParseGetClusterStatusesResponse(rsp *http.Response) (*GetClusterStatusesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetClusterStatusesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdapterStatusList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest UnauthorizedDetails
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundDetails
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemDetails
