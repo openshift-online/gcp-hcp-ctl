@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"google.golang.org/api/idtoken"
 )
 
 // tokenFetcher abstracts credential retrieval so tests can inject fakes.
@@ -74,10 +77,71 @@ type TokenSource struct {
 	fetcher   tokenFetcher
 }
 
-// NewTokenSource creates a TokenSource that acquires Google ID tokens
-// via gcloud without a custom audience (suitable for API Gateway auth).
-func NewTokenSource() *TokenSource {
-	return &TokenSource{fetcher: gcloudFetcher{}}
+// goSDKFetcher retrieves tokens and account info via the Go GCP SDK.
+// Used as a fallback when gcloud is not available in PATH.
+// Requires GOOGLE_APPLICATION_CREDENTIALS to point to a WIF external_account
+// credential file with a service_account_impersonation_url field.
+type goSDKFetcher struct {
+	audience string
+}
+
+// FetchIdentityToken obtains a Google ID token (JWT) using the Go SDK's
+// idtoken package. A fresh idtoken.TokenSource is created on each call;
+// caching is handled by the outer TokenSource (55-minute window).
+//
+// Do NOT hoist idtoken.NewTokenSource to goSDKFetcher construction time —
+// errors must surface at Token() call time, not at NewTokenSource() time.
+func (g goSDKFetcher) FetchIdentityToken(ctx context.Context) (string, error) {
+	ts, err := idtoken.NewTokenSource(ctx, g.audience)
+	if err != nil {
+		return "", fmt.Errorf("failed to obtain identity token via Go SDK: %w\n\n"+
+			"  Ensure GOOGLE_APPLICATION_CREDENTIALS points to a valid WIF credential file", err)
+	}
+	tok, err := ts.Token()
+	if err != nil {
+		return "", fmt.Errorf("failed to obtain identity token via Go SDK: %w\n\n"+
+			"  Ensure GOOGLE_APPLICATION_CREDENTIALS points to a valid WIF credential file", err)
+	}
+	// idtoken stores the JWT in AccessToken despite the field name.
+	// Verified against google.golang.org/api v0.266–v0.293: both the legacy
+	// oauth2.ReuseTokenSource path and the new oauth2adapt path set AccessToken
+	// to the raw JWT string.
+	return tok.AccessToken, nil
+}
+
+// FetchAccountEmail extracts the service account email from the WIF
+// credential file pointed to by GOOGLE_APPLICATION_CREDENTIALS.
+// Makes no network calls — parses service_account_impersonation_url directly.
+func (g goSDKFetcher) FetchAccountEmail(_ context.Context) (string, error) {
+	credFile := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+	if credFile == "" {
+		return "", fmt.Errorf("GOOGLE_APPLICATION_CREDENTIALS is not set")
+	}
+	data, err := os.ReadFile(credFile)
+	if err != nil {
+		return "", fmt.Errorf("reading credential file %s: %w", credFile, err)
+	}
+	return saEmailFromCredJSON(data)
+}
+
+// chooseFetcher returns a gcloudFetcher if gcloud is available in PATH,
+// or a goSDKFetcher otherwise. Called once at TokenSource construction time.
+func chooseFetcher(audience string) tokenFetcher {
+	if _, err := exec.LookPath("gcloud"); err == nil {
+		return gcloudFetcher{}
+	}
+	return goSDKFetcher{audience: audience}
+}
+
+// NewTokenSource creates a TokenSource that acquires Google ID tokens.
+// The audience is the API endpoint URL used for identity token validation
+// (e.g. "https://platform-api.example.com").
+//
+// If gcloud is found in PATH, tokens are acquired via gcloud (default,
+// unchanged behaviour for laptop users). Otherwise, tokens are acquired
+// via the Go SDK using GOOGLE_APPLICATION_CREDENTIALS (CI/e2e path).
+func NewTokenSource(audience string) *TokenSource {
+	return &TokenSource{fetcher: chooseFetcher(audience)}
 }
 
 // Token returns a valid Google ID token and the authenticated user's email,

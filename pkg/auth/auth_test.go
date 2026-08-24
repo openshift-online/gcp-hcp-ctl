@@ -115,7 +115,7 @@ func TestTokenSource_WhenEmailFetchFails_ItShouldNotCorruptCache(t *testing.T) {
 }
 
 func TestNewTokenSource_WhenCreated_ItShouldReturnNonNil(t *testing.T) {
-	ts := NewTokenSource()
+	ts := NewTokenSource("https://api.example.com")
 	if ts == nil {
 		t.Fatal("expected non-nil TokenSource")
 	}
