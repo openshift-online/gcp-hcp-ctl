@@ -167,8 +167,7 @@ func TestSAEmailFromCredJSON_InvalidJSON(t *testing.T) {
 }
 
 func TestSAEmailFromCredJSON_URLWithNoColon(t *testing.T) {
-	// If the URL has no ":generateAccessToken" suffix, Split returns the full
-	// base segment — we accept it as a best-effort email.
+	// URL with no ":generateAccessToken" suffix but a valid SA email in the path.
 	data := []byte(`{
 		"service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/plain-sa@project.iam.gserviceaccount.com"
 	}`)
@@ -178,6 +177,40 @@ func TestSAEmailFromCredJSON_URLWithNoColon(t *testing.T) {
 	}
 	if got != "plain-sa@project.iam.gserviceaccount.com" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestSAEmailFromCredJSON_MalformedURL(t *testing.T) {
+	// URL where filepath.Base yields a segment with no "@" — should error rather
+	// than silently return a non-email string (e.g. "serviceAccounts").
+	data := []byte(`{
+		"service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+	}`)
+	_, err := saEmailFromCredJSON(data)
+	if err == nil {
+		t.Fatal("expected error for malformed URL with no SA email segment")
+	}
+	if !strings.Contains(err.Error(), "service_account_impersonation_url") {
+		t.Errorf("error should mention field, got: %v", err)
+	}
+}
+
+func TestGoSDKFetcher_FetchIdentityToken_EnvUnset(t *testing.T) {
+	// When GOOGLE_APPLICATION_CREDENTIALS is unset, FetchIdentityToken should
+	// return a clear actionable error before attempting any GCP network call.
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+	// Also remove gcloud from PATH so chooseFetcher would select goSDKFetcher.
+	t.Setenv("PATH", t.TempDir())
+
+	f := goSDKFetcher{audience: "https://api.example.com"}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := f.FetchIdentityToken(ctx)
+	if err == nil {
+		t.Fatal("expected error when GOOGLE_APPLICATION_CREDENTIALS unset")
+	}
+	if !strings.Contains(err.Error(), "GOOGLE_APPLICATION_CREDENTIALS") {
+		t.Errorf("error should mention GOOGLE_APPLICATION_CREDENTIALS, got: %v", err)
 	}
 }
 

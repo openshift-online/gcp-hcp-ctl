@@ -62,8 +62,9 @@ func (g gcloudFetcher) FetchAccountEmail(ctx context.Context) (string, error) {
 const (
 	// defaultTokenLifetime is the assumed lifetime of a gcloud identity token (1 hour).
 	defaultTokenLifetime = 55 * time.Minute
-	// tokenRefreshTimeout bounds how long we wait for gcloud subprocess calls
-	// during a token refresh, preventing a hung process from blocking all callers.
+	// tokenRefreshTimeout bounds how long we wait for credential operations
+	// (gcloud subprocess or Go SDK token exchange) during a token refresh,
+	// preventing a hung process or network call from blocking all callers.
 	tokenRefreshTimeout = 15 * time.Second
 )
 
@@ -92,21 +93,46 @@ type goSDKFetcher struct {
 // Do NOT hoist idtoken.NewTokenSource to goSDKFetcher construction time —
 // errors must surface at Token() call time, not at NewTokenSource() time.
 func (g goSDKFetcher) FetchIdentityToken(ctx context.Context) (string, error) {
+	// Fail fast with an actionable message if the env var is unset — idtoken
+	// would surface this as an opaque "could not find default credentials" error.
+	if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
+		return "", fmt.Errorf("failed to obtain identity token (credential setup): " +
+			"GOOGLE_APPLICATION_CREDENTIALS is not set\n\n" +
+			"  Set it to your WIF credential file path, e.g.:\n" +
+			"    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/wif-cred.json")
+	}
 	ts, err := idtoken.NewTokenSource(ctx, g.audience)
 	if err != nil {
-		return "", fmt.Errorf("failed to obtain identity token via Go SDK: %w\n\n"+
+		return "", fmt.Errorf("failed to obtain identity token (credential setup): %w\n\n"+
 			"  Ensure GOOGLE_APPLICATION_CREDENTIALS points to a valid WIF credential file", err)
 	}
-	tok, err := ts.Token()
-	if err != nil {
-		return "", fmt.Errorf("failed to obtain identity token via Go SDK: %w\n\n"+
-			"  Ensure GOOGLE_APPLICATION_CREDENTIALS points to a valid WIF credential file", err)
+	// ts.Token() has no context parameter — apply the caller's deadline via a
+	// goroutine so a hung GCP endpoint does not block all callers indefinitely,
+	// preserving parity with gcloudFetcher's exec.CommandContext behaviour.
+	type result struct {
+		tok string
+		err error
 	}
-	// idtoken stores the JWT in AccessToken despite the field name.
-	// Verified against google.golang.org/api v0.266–v0.293: both the legacy
-	// oauth2.ReuseTokenSource path and the new oauth2adapt path set AccessToken
-	// to the raw JWT string.
-	return tok.AccessToken, nil
+	ch := make(chan result, 1)
+	go func() {
+		tok, err := ts.Token()
+		if err != nil {
+			ch <- result{err: fmt.Errorf("failed to obtain identity token (token exchange): %w\n\n"+
+				"  Ensure GOOGLE_APPLICATION_CREDENTIALS points to a valid WIF credential file", err)}
+			return
+		}
+		// idtoken stores the JWT in AccessToken despite the field name.
+		// Verified against google.golang.org/api v0.266–v0.293: both the legacy
+		// oauth2.ReuseTokenSource path and the new oauth2adapt path set AccessToken
+		// to the raw JWT string.
+		ch <- result{tok: tok.AccessToken}
+	}()
+	select {
+	case r := <-ch:
+		return r.tok, r.err
+	case <-ctx.Done():
+		return "", fmt.Errorf("identity token fetch timed out: %w", ctx.Err())
+	}
 }
 
 // FetchAccountEmail extracts the service account email from the WIF
@@ -152,7 +178,7 @@ func (ts *TokenSource) Token(ctx context.Context) (token, userEmail string, err 
 	defer ts.mu.Unlock()
 
 	if ts.fetcher == nil {
-		ts.fetcher = gcloudFetcher{}
+		panic("bug: TokenSource.fetcher is nil — use NewTokenSource() to construct a TokenSource")
 	}
 
 	if ts.token != "" && time.Now().Before(ts.expiry) {
@@ -201,5 +227,8 @@ func saEmailFromCredJSON(data []byte) (string, error) {
 	}
 	base := filepath.Base(cred.ServiceAccountImpersonationURL)
 	email := strings.Split(base, ":")[0]
+	if !strings.Contains(email, "@") {
+		return "", fmt.Errorf("service_account_impersonation_url does not contain a service account email (got segment %q)", email)
+	}
 	return email, nil
 }
