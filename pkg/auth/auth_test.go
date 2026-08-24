@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +178,118 @@ func TestSAEmailFromCredJSON_URLWithNoColon(t *testing.T) {
 	}
 	if got != "plain-sa@project.iam.gserviceaccount.com" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestChooseFetcher_GcloudNotInPath(t *testing.T) {
+	// Point PATH at an empty temp dir so gcloud cannot be found.
+	tmp := t.TempDir()
+	t.Setenv("PATH", tmp)
+
+	f := chooseFetcher("https://api.example.com")
+	sdk, ok := f.(goSDKFetcher)
+	if !ok {
+		t.Fatalf("expected goSDKFetcher when gcloud not in PATH, got %T", f)
+	}
+	if sdk.audience != "https://api.example.com" {
+		t.Errorf("expected audience %q, got %q", "https://api.example.com", sdk.audience)
+	}
+}
+
+func TestChooseFetcher_GcloudInPath(t *testing.T) {
+	// Create a stub gcloud executable in a temp dir.
+	tmp := t.TempDir()
+	gcloudPath := filepath.Join(tmp, "gcloud")
+	if err := os.WriteFile(gcloudPath, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatalf("creating stub gcloud: %v", err)
+	}
+	t.Setenv("PATH", tmp)
+
+	f := chooseFetcher("https://api.example.com")
+	if _, ok := f.(gcloudFetcher); !ok {
+		t.Fatalf("expected gcloudFetcher when gcloud in PATH, got %T", f)
+	}
+}
+
+func TestNewTokenSource_AudiencePassedToGoSDKFetcher(t *testing.T) {
+	// When gcloud is not in PATH, NewTokenSource must thread the audience
+	// through to goSDKFetcher.
+	tmp := t.TempDir()
+	t.Setenv("PATH", tmp)
+
+	ts := NewTokenSource("https://platform-api.example.com")
+	sdk, ok := ts.fetcher.(goSDKFetcher)
+	if !ok {
+		t.Fatalf("expected goSDKFetcher, got %T", ts.fetcher)
+	}
+	if sdk.audience != "https://platform-api.example.com" {
+		t.Errorf("audience not threaded through: got %q", sdk.audience)
+	}
+}
+
+func TestGoSDKFetcher_FetchAccountEmail_ValidWIF(t *testing.T) {
+	credJSON := []byte(`{
+		"type": "external_account",
+		"service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/platform-ci-sa@gcp-hcp-ci.iam.gserviceaccount.com:generateAccessToken"
+	}`)
+	tmp := t.TempDir()
+	credFile := filepath.Join(tmp, "wif-cred.json")
+	if err := os.WriteFile(credFile, credJSON, 0600); err != nil {
+		t.Fatalf("writing cred file: %v", err)
+	}
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
+
+	f := goSDKFetcher{audience: "https://api.example.com"}
+	email, err := f.FetchAccountEmail(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if email != "platform-ci-sa@gcp-hcp-ci.iam.gserviceaccount.com" {
+		t.Errorf("got %q", email)
+	}
+}
+
+func TestGoSDKFetcher_FetchAccountEmail_EnvUnset(t *testing.T) {
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+
+	f := goSDKFetcher{audience: "https://api.example.com"}
+	_, err := f.FetchAccountEmail(context.Background())
+	if err == nil {
+		t.Fatal("expected error when GOOGLE_APPLICATION_CREDENTIALS unset")
+	}
+	if !strings.Contains(err.Error(), "GOOGLE_APPLICATION_CREDENTIALS") {
+		t.Errorf("error should mention env var, got: %v", err)
+	}
+}
+
+func TestGoSDKFetcher_FetchAccountEmail_FileMissing(t *testing.T) {
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/path/wif.json")
+
+	f := goSDKFetcher{audience: "https://api.example.com"}
+	_, err := f.FetchAccountEmail(context.Background())
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if !strings.Contains(err.Error(), "/nonexistent/path/wif.json") {
+		t.Errorf("error should contain file path, got: %v", err)
+	}
+}
+
+func TestGoSDKFetcher_FetchAccountEmail_NoImpersonationURL(t *testing.T) {
+	credJSON := []byte(`{"type": "external_account"}`)
+	tmp := t.TempDir()
+	credFile := filepath.Join(tmp, "wif-cred.json")
+	if err := os.WriteFile(credFile, credJSON, 0600); err != nil {
+		t.Fatalf("writing cred file: %v", err)
+	}
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
+
+	f := goSDKFetcher{audience: "https://api.example.com"}
+	_, err := f.FetchAccountEmail(context.Background())
+	if err == nil {
+		t.Fatal("expected error for missing service_account_impersonation_url")
+	}
+	if !strings.Contains(err.Error(), "service_account_impersonation_url") {
+		t.Errorf("error should mention field, got: %v", err)
 	}
 }
