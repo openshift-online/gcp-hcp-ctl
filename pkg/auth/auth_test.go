@@ -244,6 +244,22 @@ func TestChooseFetcher_GcloudInPath(t *testing.T) {
 	}
 }
 
+func TestNewTokenSource_AudienceTrailingSlashStripped(t *testing.T) {
+	// Trailing slashes must be stripped so callers using URLs with or without
+	// a trailing slash get identical tokens from the Go SDK path.
+	tmp := t.TempDir()
+	t.Setenv("PATH", tmp)
+
+	ts := NewTokenSource("https://platform-api.example.com/")
+	sdk, ok := ts.fetcher.(goSDKFetcher)
+	if !ok {
+		t.Fatalf("expected goSDKFetcher, got %T", ts.fetcher)
+	}
+	if sdk.audience != "https://platform-api.example.com" {
+		t.Errorf("expected trailing slash stripped, got audience %q", sdk.audience)
+	}
+}
+
 func TestNewTokenSource_AudiencePassedToGoSDKFetcher(t *testing.T) {
 	// When gcloud is not in PATH, NewTokenSource must thread the audience
 	// through to goSDKFetcher.

@@ -161,12 +161,15 @@ func chooseFetcher(audience string) tokenFetcher {
 
 // NewTokenSource creates a TokenSource that acquires Google ID tokens.
 // The audience is the API endpoint URL used for identity token validation
-// (e.g. "https://platform-api.example.com").
+// (e.g. "https://platform-api.example.com"). Trailing slashes are stripped
+// so that callers passing URLs with or without a trailing slash receive
+// identical tokens from the Go SDK path.
 //
 // If gcloud is found in PATH, tokens are acquired via gcloud (default,
 // unchanged behaviour for laptop users). Otherwise, tokens are acquired
 // via the Go SDK using GOOGLE_APPLICATION_CREDENTIALS (CI/e2e path).
 func NewTokenSource(audience string) *TokenSource {
+	audience = strings.TrimRight(audience, "/")
 	return &TokenSource{fetcher: chooseFetcher(audience)}
 }
 
