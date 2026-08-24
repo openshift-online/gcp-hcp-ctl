@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-24
 **Status:** Approved
-**Scope:** `pkg/auth/auth.go`, `pkg/cluster/cmd.go`, `pkg/nodepool/cmd.go`
+**Scope:** `pkg/auth/auth.go`, `pkg/cluster/cmd.go`, `pkg/nodepool/cmd.go`, `pkg/platformapi/client_test.go`
 
 ## Problem
 
@@ -86,9 +86,19 @@ Implements `tokenFetcher`. Both methods are new; no changes to `gcloudFetcher`.
 
 **`FetchIdentityToken(ctx context.Context) (string, error)`**
 
-Uses `idtoken.NewTokenSource(ctx, audience)` (from `google.golang.org/api/idtoken`,
-already in `go.mod`). Construction is lazy — errors surface on first `Token()` call.
-Returns `token.AccessToken` (the JWT is carried in this field by the idtoken library).
+Calls `idtoken.NewTokenSource(ctx, audience)` (from `google.golang.org/api/idtoken`,
+already in `go.mod`) on every invocation — a fresh `idtoken.TokenSource` is created
+each call. This is intentional: **do not hoist `idtoken.NewTokenSource` to
+`goSDKFetcher` struct construction or `chooseFetcher`** — doing so would cause startup
+failures on bad credentials instead of per-request failures, and would make the
+described unit tests unwritable. `pkg/auth.NewTokenSource(audience)` must never fail
+at construction time; errors surface only when the caller first calls `Token()`.
+
+Returns `token.AccessToken`. Despite the field name, the `idtoken` package stores the
+raw JWT string here, not an OAuth2 access token. Verified against
+`google.golang.org/api` v0.266–v0.293 source: both the legacy
+`oauth2.ReuseTokenSource` path and the new `oauth2adapt.TokenSourceFromTokenProvider`
+path set `oauth2.Token.AccessToken` to the JWT string.
 
 Error messages:
 - Credential file missing / `GOOGLE_APPLICATION_CREDENTIALS` unset →
