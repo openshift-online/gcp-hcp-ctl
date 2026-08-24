@@ -2,8 +2,10 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -110,4 +112,30 @@ func (ts *TokenSource) Token(ctx context.Context) (token, userEmail string, err 
 	ts.userEmail = newEmail
 	ts.expiry = time.Now().Add(defaultTokenLifetime)
 	return ts.token, ts.userEmail, nil
+}
+
+// saEmailFromCredJSON extracts the service account email from the
+// service_account_impersonation_url field of a WIF external_account
+// credential JSON blob. This mirrors the extraction done internally by
+// google.golang.org/api/idtoken tokenSourceFromBytes.
+//
+// The URL has the form:
+//
+//	https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/SA_EMAIL:generateAccessToken
+//
+// filepath.Base returns "SA_EMAIL:generateAccessToken"; Split on ":" gives the email.
+func saEmailFromCredJSON(data []byte) (string, error) {
+	var cred struct {
+		ServiceAccountImpersonationURL string `json:"service_account_impersonation_url"`
+	}
+	if err := json.Unmarshal(data, &cred); err != nil {
+		return "", fmt.Errorf("parsing credential JSON: %w", err)
+	}
+	if cred.ServiceAccountImpersonationURL == "" {
+		return "", fmt.Errorf("credential has no service_account_impersonation_url — " +
+			"direct workload pool principals (without SA impersonation) are not supported")
+	}
+	base := filepath.Base(cred.ServiceAccountImpersonationURL)
+	email := strings.Split(base, ":")[0]
+	return email, nil
 }

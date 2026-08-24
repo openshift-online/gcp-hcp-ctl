@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -117,5 +118,63 @@ func TestNewTokenSource_WhenCreated_ItShouldReturnNonNil(t *testing.T) {
 	ts := NewTokenSource()
 	if ts == nil {
 		t.Fatal("expected non-nil TokenSource")
+	}
+}
+
+func TestSAEmailFromCredJSON_ValidURL(t *testing.T) {
+	data := []byte(`{
+		"type": "external_account",
+		"service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/platform-ci-sa@gcp-hcp-ci.iam.gserviceaccount.com:generateAccessToken"
+	}`)
+	got, err := saEmailFromCredJSON(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "platform-ci-sa@gcp-hcp-ci.iam.gserviceaccount.com" {
+		t.Errorf("got %q, want %q", got, "platform-ci-sa@gcp-hcp-ci.iam.gserviceaccount.com")
+	}
+}
+
+func TestSAEmailFromCredJSON_MissingField(t *testing.T) {
+	data := []byte(`{"type": "external_account"}`)
+	_, err := saEmailFromCredJSON(data)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "service_account_impersonation_url") {
+		t.Errorf("error should mention field name, got: %v", err)
+	}
+}
+
+func TestSAEmailFromCredJSON_EmptyURL(t *testing.T) {
+	data := []byte(`{"service_account_impersonation_url": ""}`)
+	_, err := saEmailFromCredJSON(data)
+	if err == nil {
+		t.Fatal("expected error for empty URL, got nil")
+	}
+	if !strings.Contains(err.Error(), "service_account_impersonation_url") {
+		t.Errorf("error should mention field name, got: %v", err)
+	}
+}
+
+func TestSAEmailFromCredJSON_InvalidJSON(t *testing.T) {
+	_, err := saEmailFromCredJSON([]byte(`not json`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestSAEmailFromCredJSON_URLWithNoColon(t *testing.T) {
+	// If the URL has no ":generateAccessToken" suffix, Split returns the full
+	// base segment — we accept it as a best-effort email.
+	data := []byte(`{
+		"service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/plain-sa@project.iam.gserviceaccount.com"
+	}`)
+	got, err := saEmailFromCredJSON(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "plain-sa@project.iam.gserviceaccount.com" {
+		t.Errorf("got %q", got)
 	}
 }
