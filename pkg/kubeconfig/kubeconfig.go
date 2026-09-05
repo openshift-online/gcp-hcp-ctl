@@ -75,7 +75,7 @@ func Update(opts UpdateOptions) (contextName, previousContext, kubeconfigPath st
 	}
 
 	cfg.AuthInfos[opts.ClusterName] = &clientcmdapi.AuthInfo{
-		Exec: gcloudExecCredential(),
+		Exec: execCredential(opts.Server),
 	}
 
 	ns := opts.Namespace
@@ -149,18 +149,16 @@ func save(cfg *clientcmdapi.Config, path string) error {
 	return nil
 }
 
-// gcloudExecCredential returns an exec plugin config that produces a
-// valid client.authentication.k8s.io/v1beta1 ExecCredential by wrapping
-// the output of "gcloud auth print-identity-token" in the required JSON
-// envelope. This ensures kubectl gets a fresh token on every invocation.
-func gcloudExecCredential() *clientcmdapi.ExecConfig {
+// execCredential returns an exec plugin config that calls
+// "gcphcpctl auth token --audience <apiEndpoint>" to produce a fresh
+// client.authentication.k8s.io/v1beta1 ExecCredential on every kubectl
+// invocation. This removes the gcloud runtime dependency from kubectl's
+// credential refresh path.
+func execCredential(apiEndpoint string) *clientcmdapi.ExecConfig {
 	return &clientcmdapi.ExecConfig{
 		APIVersion: "client.authentication.k8s.io/v1beta1",
-		Command:    "bash",
-		Args: []string{
-			"-c",
-			`token="$(gcloud auth print-identity-token)" || exit $?; printf '{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredential","status":{"token":"%s"}}' "$token"`,
-		},
+		Command:    "gcphcpctl",
+		Args:       []string{"auth", "token", "--audience", apiEndpoint},
 		InteractiveMode: clientcmdapi.NeverExecInteractiveMode,
 	}
 }

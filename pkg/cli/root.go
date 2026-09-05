@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/cli/auth"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/cluster"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/config"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/iam"
@@ -72,6 +73,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&apiEndpoint, "api-endpoint", os.Getenv("GCPHCPCTL_API_ENDPOINT"), "Platform API endpoint URL (env: GCPHCPCTL_API_ENDPOINT)")
 	rootCmd.PersistentFlags().StringVar(&oidcEndpoint, "oidc-endpoint", os.Getenv("GCPHCPCTL_OIDC_ENDPOINT"), "OIDC issuer base URL (env: GCPHCPCTL_OIDC_ENDPOINT)")
 
+	rootCmd.AddCommand(auth.NewAuthCmd())
 	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(ops.NewOpsCmd())
 	rootCmd.AddCommand(iam.NewIAMCmd())

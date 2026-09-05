@@ -10,12 +10,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
-	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
-	"google.golang.org/api/idtoken"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/auth"
 	"google.golang.org/api/option"
 	runapi "google.golang.org/api/run/v2"
 )
@@ -40,7 +41,8 @@ type Client struct {
 	Project string
 	Region  string
 
-	httpClient *http.Client
+	mu          sync.Mutex
+	httpClients map[string]*http.Client // keyed by audience (service URL)
 }
 
 // NewClient creates a Cloud Run client that authenticates with identity tokens.
@@ -150,9 +152,9 @@ func (c *Client) Diagnose(ctx context.Context, serviceURL, query string) (*Diagn
 
 	endpoint := strings.TrimRight(serviceURL, "/") + "/diagnose"
 
-	httpClient, err := c.getHTTPClient(ctx, serviceURL)
+	httpClient, err := c.getHTTPClient(serviceURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("configuring HTTP client: %w", err)
 	}
 
 	resp, err := c.doWithRetry(ctx, httpClient, http.MethodPost, endpoint,
@@ -191,9 +193,9 @@ func (c *Client) DiagnoseStream(ctx context.Context, serviceURL, query string, o
 
 	endpoint := strings.TrimRight(serviceURL, "/") + "/diagnose"
 
-	httpClient, err := c.getHTTPClient(ctx, serviceURL)
+	httpClient, err := c.getHTTPClient(serviceURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("configuring HTTP client: %w", err)
 	}
 
 	resp, err := c.doWithRetry(ctx, httpClient, http.MethodPost, endpoint,
@@ -305,69 +307,62 @@ func (c *Client) doWithRetry(ctx context.Context, httpClient *http.Client, metho
 	return nil, fmt.Errorf("retry loop exited unexpectedly")
 }
 
-func (c *Client) getHTTPClient(ctx context.Context, audience string) (*http.Client, error) {
-	if c.httpClient != nil {
-		return c.httpClient, nil
+// getHTTPClient returns an HTTP client scoped to the given audience (service URL).
+// Each distinct audience gets its own token source so tokens are never sent to
+// the wrong service. Clients are created lazily and cached; initialization is
+// protected by a mutex to prevent races when the same Client is used concurrently.
+func (c *Client) getHTTPClient(audience string) (*http.Client, error) {
+	audience = strings.TrimRight(audience, "/")
+
+	parsedURL, err := url.Parse(audience)
+	if err != nil || parsedURL.Host == "" {
+		return nil, fmt.Errorf("invalid audience URL %q: %w", audience, err)
 	}
 
-	// Try service account credentials first (idtoken library).
-	client, err := idtoken.NewClient(ctx, audience)
-	if err == nil {
-		c.httpClient = client
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.httpClients == nil {
+		c.httpClients = make(map[string]*http.Client)
+	}
+	if client, ok := c.httpClients[audience]; ok {
 		return client, nil
 	}
-
-	// Fall back to gcloud for user credentials (authorized_user type).
-	if strings.Contains(err.Error(), "unsupported credentials type") {
-		return c.gcloudIdentityTokenClient(ctx, audience)
-	}
-
-	return nil, wrapAuthError("obtaining identity token", err)
-}
-
-// gcloudIdentityTokenClient creates an HTTP client that uses
-// `gcloud auth print-identity-token` for authentication. This supports
-// user credentials which the idtoken library does not handle.
-func (c *Client) gcloudIdentityTokenClient(ctx context.Context, audience string) (*http.Client, error) {
-	token, err := gcloudIdentityToken(ctx, audience)
-	if err != nil {
-		return nil, err
-	}
-
+	ts := auth.NewTokenSource(audience)
 	client := &http.Client{
-		Transport: &identityTokenTransport{
-			base:     http.DefaultTransport,
-			audience: audience,
-			token:    token,
+		Transport: &cloudRunTransport{
+			base:         http.DefaultTransport,
+			tokenSource:  ts,
+			audienceHost: parsedURL.Host,
 		},
 	}
-	c.httpClient = client
+	c.httpClients[audience] = client
 	return client, nil
 }
 
-// gcloudIdentityToken obtains an identity token via gcloud CLI.
-// For user credentials, --audiences is not supported so we omit it;
-// Cloud Run accepts the default identity token.
-func gcloudIdentityToken(ctx context.Context, audience string) (string, error) {
-	cmd := exec.CommandContext(ctx, "gcloud", "auth", "print-identity-token")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("obtaining identity token via gcloud: %w\n\n"+
-			"  Ensure you are logged in: gcloud auth login", err)
+// cloudRunTransport injects a Bearer identity token into every request.
+// The token is fetched (and cached) via auth.TokenSource on each RoundTrip,
+// so the HTTP client itself can be reused across the lifetime of a Client.
+// As a defence-in-depth measure, the token is only injected when the request
+// is made over HTTPS to the expected audience host.
+type cloudRunTransport struct {
+	base         http.RoundTripper
+	tokenSource  *auth.TokenSource
+	audienceHost string // expected hostname; token only sent to this host over HTTPS
+}
+
+func (t *cloudRunTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Scheme != "https" || req.URL.Host != t.audienceHost {
+		return nil, fmt.Errorf(
+			"cloudrun transport: refusing to send identity token to %s://%s (expected https://%s)",
+			req.URL.Scheme, req.URL.Host, t.audienceHost,
+		)
 	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-// identityTokenTransport adds a Bearer identity token to requests.
-type identityTokenTransport struct {
-	base     http.RoundTripper
-	audience string
-	token    string
-}
-
-func (t *identityTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	token, _, err := t.tokenSource.Token(req.Context())
+	if err != nil {
+		return nil, fmt.Errorf("obtaining identity token: %w", err)
+	}
 	req = req.Clone(req.Context())
-	req.Header.Set("Authorization", "Bearer "+t.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	return t.base.RoundTrip(req)
 }
 
@@ -381,9 +376,9 @@ func (c *Client) ChatStream(ctx context.Context, serviceURL string, req ChatRequ
 
 	endpoint := strings.TrimRight(serviceURL, "/") + "/chat"
 
-	httpClient, err := c.getHTTPClient(ctx, serviceURL)
+	httpClient, err := c.getHTTPClient(serviceURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("configuring HTTP client: %w", err)
 	}
 
 	resp, err := c.doWithRetry(ctx, httpClient, http.MethodPost, endpoint,

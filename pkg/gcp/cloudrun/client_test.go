@@ -115,7 +115,7 @@ func TestDiagnose_HTTPFlow(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	resp, err := client.Diagnose(t.Context(), server.URL, "why is pod X failing")
@@ -140,7 +140,7 @@ func TestDiagnose_HTTPError(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	_, err := client.Diagnose(t.Context(), server.URL, "test query")
@@ -189,7 +189,7 @@ func TestDiagnoseStream(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	var events []StreamEvent
@@ -232,7 +232,7 @@ func TestDiagnoseStream_Error(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	_, err := client.DiagnoseStream(t.Context(), server.URL, "test", nil)
@@ -313,7 +313,7 @@ func TestDiagnose_RetryOn503ThenSuccess(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	resp, err := client.Diagnose(t.Context(), server.URL, "test cold start")
@@ -341,7 +341,7 @@ func TestDiagnose_GivesUpAfterMaxRetries(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	_, err := client.Diagnose(t.Context(), server.URL, "test max retries")
@@ -372,7 +372,7 @@ func TestDiagnose_NoRetryOnNonTransient(t *testing.T) {
 			client := &Client{
 				Project:    "test-project",
 				Region:     "us-central1",
-				httpClient: server.Client(),
+				httpClients: map[string]*http.Client{server.URL: server.Client()},
 			}
 
 			_, err := client.Diagnose(t.Context(), server.URL, "test no retry")
@@ -407,7 +407,7 @@ func TestChatStream_TextAndDone(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	var events []StreamEvent
@@ -445,7 +445,7 @@ func TestChatStream_ToolCall(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	var events []StreamEvent
@@ -497,7 +497,7 @@ func TestChatStream_ToolResult(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	result, err := client.ChatStream(t.Context(), server.URL, ChatRequest{
@@ -526,7 +526,7 @@ func TestChatStream_Error(t *testing.T) {
 	client := &Client{
 		Project:    "test-project",
 		Region:     "us-central1",
-		httpClient: server.Client(),
+		httpClients: map[string]*http.Client{server.URL: server.Client()},
 	}
 
 	_, err := client.ChatStream(t.Context(), server.URL, ChatRequest{
@@ -537,5 +537,55 @@ func TestChatStream_Error(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "model overloaded") {
 		t.Errorf("expected error to contain 'model overloaded', got %q", err.Error())
+	}
+}
+
+// TestCloudRunTransport_WhenNotHTTPS_ItShouldRefuseToSendToken verifies that
+// the cloudRunTransport defence-in-depth guard rejects requests that are not
+// directed at the expected audience over HTTPS.
+func TestCloudRunTransport_WhenNotHTTPS_ItShouldRefuseToSendToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	transport := &cloudRunTransport{
+		base:         http.DefaultTransport,
+		tokenSource:  nil, // never reached
+		audienceHost: "expected-host.example.com",
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/path", nil)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+
+	_, err = transport.RoundTrip(req)
+	if err == nil {
+		t.Fatal("expected error for non-HTTPS / wrong-host request")
+	}
+	if !strings.Contains(err.Error(), "refusing to send identity token") {
+		t.Errorf("expected refusal message, got: %v", err)
+	}
+}
+
+// TestGetHTTPClient_WhenAudienceHasTrailingSlash_ItShouldNormalizeIt verifies
+// that trailing slashes in the audience URL are stripped before cache keying,
+// so that "https://svc.example.com/" and "https://svc.example.com" share the
+// same cached client.
+func TestGetHTTPClient_WhenAudienceHasTrailingSlash_ItShouldNormalizeIt(t *testing.T) {
+	c := &Client{}
+
+	// Pre-populate with the normalised key (no trailing slash).
+	base := "https://svc.example.com"
+	stub := &http.Client{}
+	c.httpClients = map[string]*http.Client{base: stub}
+
+	got, err := c.getHTTPClient(base + "/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != stub {
+		t.Errorf("expected cached client to be returned after trailing-slash normalisation")
 	}
 }

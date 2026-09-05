@@ -3,7 +3,6 @@ package kubeconfig
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -87,8 +86,8 @@ func TestUpdate(t *testing.T) {
 		if user.Exec == nil {
 			t.Fatal("expected exec config")
 		}
-		if user.Exec.Command != "bash" {
-			t.Errorf("got command %q, want bash", user.Exec.Command)
+		if user.Exec.Command != "gcphcpctl" {
+			t.Errorf("got command %q, want gcphcpctl", user.Exec.Command)
 		}
 		if user.Exec.APIVersion != "client.authentication.k8s.io/v1beta1" {
 			t.Errorf("got apiVersion %q", user.Exec.APIVersion)
@@ -688,30 +687,71 @@ func TestRestoreContext(t *testing.T) {
 	})
 }
 
-func TestGcloudExecCredential(t *testing.T) {
-	t.Run("When called it should return a valid exec config with gcloud script", func(t *testing.T) {
-		exec := gcloudExecCredential()
+func TestExecCredential(t *testing.T) {
+	t.Run("When called it should return a gcphcpctl exec config with audience flag", func(t *testing.T) {
+		const apiEndpoint = "https://api.my-cluster.example.com"
+		exec := execCredential(apiEndpoint)
 
 		if exec.APIVersion != "client.authentication.k8s.io/v1beta1" {
 			t.Errorf("got APIVersion %q, want client.authentication.k8s.io/v1beta1", exec.APIVersion)
 		}
-		if exec.Command != "bash" {
-			t.Errorf("got Command %q, want bash", exec.Command)
+		if exec.Command != "gcphcpctl" {
+			t.Errorf("got Command %q, want gcphcpctl", exec.Command)
 		}
-		if len(exec.Args) != 2 {
-			t.Fatalf("got %d args, want 2", len(exec.Args))
+		if len(exec.Args) != 4 {
+			t.Fatalf("got %d args, want 4: %v", len(exec.Args), exec.Args)
 		}
-		if exec.Args[0] != "-c" {
-			t.Errorf("got Args[0] %q, want -c", exec.Args[0])
+		if exec.Args[0] != "auth" {
+			t.Errorf("got Args[0] %q, want auth", exec.Args[0])
 		}
-		if !strings.Contains(exec.Args[1], "gcloud auth print-identity-token") {
-			t.Error("script does not contain gcloud auth print-identity-token")
+		if exec.Args[1] != "token" {
+			t.Errorf("got Args[1] %q, want token", exec.Args[1])
 		}
-		if !strings.Contains(exec.Args[1], "ExecCredential") {
-			t.Error("script does not produce ExecCredential JSON")
+		if exec.Args[2] != "--audience" {
+			t.Errorf("got Args[2] %q, want --audience", exec.Args[2])
+		}
+		if exec.Args[3] != apiEndpoint {
+			t.Errorf("got Args[3] %q, want %q", exec.Args[3], apiEndpoint)
 		}
 		if exec.InteractiveMode != clientcmdapi.NeverExecInteractiveMode {
 			t.Errorf("got InteractiveMode %q, want NeverExecInteractiveMode", exec.InteractiveMode)
+		}
+	})
+}
+
+func TestUpdateExecCredentialAudience(t *testing.T) {
+	t.Run("When Update is called it should write the server URL as the exec credential audience", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config")
+		const server = "https://api.my-cluster.example.com"
+
+		if _, _, _, err := Update(UpdateOptions{
+			ClusterName:    "my-cluster",
+			Server:         server,
+			KubeconfigPath: path,
+		}); err != nil {
+			t.Fatalf("update error: %v", err)
+		}
+
+		cfg, err := clientcmd.LoadFromFile(path)
+		if err != nil {
+			t.Fatalf("load error: %v", err)
+		}
+
+		user := cfg.AuthInfos["my-cluster"]
+		if user == nil || user.Exec == nil {
+			t.Fatal("expected exec config in user entry")
+		}
+		if user.Exec.Command != "gcphcpctl" {
+			t.Errorf("got command %q, want gcphcpctl", user.Exec.Command)
+		}
+		// The last arg should be the audience (the server URL).
+		args := user.Exec.Args
+		if len(args) < 2 || args[len(args)-2] != "--audience" {
+			t.Fatalf("expected --audience flag in args: %v", args)
+		}
+		if args[len(args)-1] != server {
+			t.Errorf("got audience %q, want %q", args[len(args)-1], server)
 		}
 	})
 }

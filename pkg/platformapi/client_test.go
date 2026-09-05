@@ -20,7 +20,7 @@ func TestNewClientValidation(t *testing.T) {
 	})
 
 	t.Run("When project is empty it should return error", func(t *testing.T) {
-		_, err := NewClient("https://api.example.com", "", auth.NewTokenSource())
+		_, err := NewClient("https://api.example.com", "", auth.NewTokenSource("https://api.example.com"))
 		if err == nil {
 			t.Fatal("expected error for empty project")
 		}
@@ -30,7 +30,7 @@ func TestNewClientValidation(t *testing.T) {
 	})
 
 	t.Run("When endpoint is HTTP instead of HTTPS it should return error", func(t *testing.T) {
-		_, err := NewClient("http://api.example.com", "my-project", auth.NewTokenSource())
+		_, err := NewClient("http://api.example.com", "my-project", auth.NewTokenSource("http://api.example.com"))
 		if err == nil {
 			t.Fatal("expected error for HTTP endpoint")
 		}
@@ -40,7 +40,7 @@ func TestNewClientValidation(t *testing.T) {
 	})
 
 	t.Run("When endpoint is empty it should return error", func(t *testing.T) {
-		_, err := NewClient("", "my-project", auth.NewTokenSource())
+		_, err := NewClient("", "my-project", auth.NewTokenSource(""))
 		if err == nil {
 			t.Fatal("expected error for empty endpoint")
 		}

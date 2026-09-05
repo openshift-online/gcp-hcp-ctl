@@ -65,7 +65,7 @@ func validateRequiredFlags(cmd *cobra.Command) error {
 }
 
 func newClient(apiEndpoint, project string) (*platformapi.Client, error) {
-	return platformapi.NewClient(apiEndpoint, project, auth.NewTokenSource())
+	return platformapi.NewClient(apiEndpoint, project, auth.NewTokenSource(apiEndpoint))
 }
 
 func clientFromCmd(cmd *cobra.Command) *platformapi.Client {
