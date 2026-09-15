@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	pkgauth "github.com/openshift-online/gcp-hcp-ctl/pkg/auth"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -75,7 +76,7 @@ func Update(opts UpdateOptions) (contextName, previousContext, kubeconfigPath st
 	}
 
 	cfg.AuthInfos[opts.ClusterName] = &clientcmdapi.AuthInfo{
-		Exec: gcloudExecCredential(),
+		Exec: execCredential(),
 	}
 
 	ns := opts.Namespace
@@ -149,18 +150,21 @@ func save(cfg *clientcmdapi.Config, path string) error {
 	return nil
 }
 
-// gcloudExecCredential returns an exec plugin config that produces a
-// valid client.authentication.k8s.io/v1beta1 ExecCredential by wrapping
-// the output of "gcloud auth print-identity-token" in the required JSON
-// envelope. This ensures kubectl gets a fresh token on every invocation.
-func gcloudExecCredential() *clientcmdapi.ExecConfig {
+// execCredential returns an exec plugin config that calls
+// "gcphcpctl auth token --audience <PlatformAPIAudience>" to produce a fresh
+// client.authentication.k8s.io/v1beta1 ExecCredential on every kubectl
+// invocation. This removes the gcloud runtime dependency from kubectl's
+// credential refresh path.
+//
+// The audience is always PlatformAPIAudience (the Google Cloud SDK OAuth2 client ID
+// configured in the HyperShift kube-apiserver's OIDC configuration) rather than the
+// cluster API endpoint URL. The kube-apiserver only accepts this fixed audience,
+// regardless of which cluster is being accessed.
+func execCredential() *clientcmdapi.ExecConfig {
 	return &clientcmdapi.ExecConfig{
-		APIVersion: "client.authentication.k8s.io/v1beta1",
-		Command:    "bash",
-		Args: []string{
-			"-c",
-			`token="$(gcloud auth print-identity-token)" || exit $?; printf '{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredential","status":{"token":"%s"}}' "$token"`,
-		},
+		APIVersion:      "client.authentication.k8s.io/v1beta1",
+		Command:         "gcphcpctl",
+		Args:            []string{"auth", "token", "--audience", pkgauth.PlatformAPIAudience},
 		InteractiveMode: clientcmdapi.NeverExecInteractiveMode,
 	}
 }
