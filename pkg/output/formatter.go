@@ -53,14 +53,16 @@ func PrintYAML(w io.Writer, data interface{}) error {
 }
 
 // PrintResult formats and prints an execution result based on the output format.
-func PrintResult(w io.Writer, format Format, data interface{}) error {
+func PrintResult(w io.Writer, format Format, data map[string]interface{}) error {
 	switch format {
 	case FormatYAML:
 		return PrintYAML(w, data)
 	case FormatJSON:
 		return PrintJSON(w, data)
+	case FormatText:
+		return PrintResourceTable(w, data, "")
 	default:
-		return PrintJSON(w, data)
+		return fmt.Errorf("unsupported output format %q", format)
 	}
 }
 
@@ -88,15 +90,27 @@ func (t *Table) Flush() error {
 	return t.w.Flush()
 }
 
-// PrintResourceTable formats Kubernetes-style resource data as a table.
-func PrintResourceTable(w io.Writer, data map[string]interface{}, resourceType string) error {
-	items, ok := data["items"].([]interface{})
+// PrintResourceTable formats a structured resource result as a table.
+func PrintResourceTable(w io.Writer, result map[string]interface{}, resourceType string) error {
+	items, ok := result["items"].([]interface{})
 	if !ok {
-		if resource, rOk := data["resource"].(map[string]interface{}); rOk {
+		if resource, rOk := result["resource"].(map[string]interface{}); rOk {
 			items = []interface{}{resource}
 		} else {
-			return PrintJSON(w, data)
+			return fmt.Errorf("text output requires items or resource in the result")
 		}
+	}
+	for i, item := range items {
+		if _, ok := item.(map[string]interface{}); !ok {
+			return fmt.Errorf("text output requires item %d to be an object", i+1)
+		}
+	}
+
+	if resourceType == "" {
+		resourceType, _ = result["resource_type"].(string)
+	}
+	if resourceType == "" {
+		return fmt.Errorf("text output requires resource_type")
 	}
 
 	if len(items) == 0 {
@@ -121,6 +135,8 @@ func PrintResourceTable(w io.Writer, data map[string]interface{}, resourceType s
 		return printEventsTable(w, items)
 	case "configmaps", "cm":
 		return printConfigMapsTable(w, items)
+	case "desires":
+		return printDesiresTable(w, items)
 	case "persistentvolumeclaims", "pvc":
 		return PrintTable(w, items, []Column{
 			{Header: "NAMESPACE", Path: "metadata.namespace"},
@@ -267,6 +283,39 @@ func printConfigMapsTable(w io.Writer, items []interface{}) error {
 		)
 	}
 	return t.Flush()
+}
+
+func printDesiresTable(w io.Writer, items []interface{}) error {
+	return PrintTable(w, items, []Column{
+		{Header: "DATABASE", Path: "database"},
+		{Header: "TYPE", Path: "desire_type"},
+		{Header: "DOCUMENT ID", Path: "document_id", Transform: TransformShortID},
+		{Header: "RESOURCE", Compute: func(item map[string]interface{}, _ []interface{}) string {
+			target := AsMap(AsMap(item["value"])["targetItem"])
+			resource := GetString(target, "resource")
+			if group := GetString(target, "group"); group != "" {
+				return resource + "." + group
+			}
+			return resource
+		}},
+		{Header: "NAMESPACE", Path: "value.targetItem.namespace", OmitEmpty: true},
+		{Header: "NAME", Path: "value.targetItem.name", OmitEmpty: true},
+		{Header: "GENERATION", Path: "value.appliedResourceGeneration", Transform: TransformUint64, OmitEmpty: true},
+		{Header: "SUCCESSFUL", Compute: func(item map[string]interface{}, _ []interface{}) string {
+			if GetString(item, "database") != "status" {
+				return ""
+			}
+			return conditionStatus(AsMap(item["value"]), "Successful")
+		}, OmitEmpty: true},
+		{Header: "DEGRADED", Compute: func(item map[string]interface{}, _ []interface{}) string {
+			if GetString(item, "database") != "status" {
+				return ""
+			}
+			return conditionStatus(AsMap(item["value"]), "Degraded")
+		}, OmitEmpty: true},
+		{Header: "UPDATED", Path: "update_time"},
+		{Header: "OBSERVED", Path: "observed_desire_update_time", OmitEmpty: true},
+	})
 }
 
 func formatAccessModes(v interface{}) string {
@@ -523,8 +572,16 @@ func conditionStatus(status map[string]interface{}, condType string) string {
 	}
 	for _, c := range conditions {
 		cm := AsMap(c)
-		if GetString(cm, "type") == condType {
-			return GetString(cm, "status")
+		conditionType := GetString(cm, "type")
+		if conditionType == "" {
+			conditionType = GetString(cm, "Type")
+		}
+		if conditionType == condType {
+			conditionStatus := GetString(cm, "status")
+			if conditionStatus == "" {
+				conditionStatus = GetString(cm, "Status")
+			}
+			return conditionStatus
 		}
 	}
 	return "Unknown"
@@ -1010,10 +1067,25 @@ func TransformAge(v interface{}) string {
 
 // TransformUint64 formats a float64 as an integer string without scientific notation.
 func TransformUint64(v interface{}) string {
+	if v == nil {
+		return ""
+	}
 	if f, ok := v.(float64); ok {
 		return fmt.Sprintf("%.0f", f)
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// TransformShortID truncates identifiers to eight characters for table output.
+func TransformShortID(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	s := fmt.Sprintf("%v", v)
+	if len(s) > 8 {
+		return s[:8]
+	}
+	return s
 }
 
 // SortItems sorts a list of Kubernetes items by namespace then name.

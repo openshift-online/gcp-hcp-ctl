@@ -7,6 +7,83 @@ import (
 	"time"
 )
 
+func TestPrintResultTextResourceTable(t *testing.T) {
+	data := map[string]interface{}{
+		"resource_type": "namespaces",
+		"items": []interface{}{
+			map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"name":              "test-namespace",
+					"creationTimestamp": "2026-09-01T00:00:00Z",
+				},
+				"status": map[string]interface{}{"phase": "Active"},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := PrintResult(&buf, FormatText, data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := buf.String()
+	for _, want := range []string{"NAME", "STATUS", "AGE", "test-namespace", "Active"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.HasPrefix(got, "{") {
+		t.Errorf("expected text table, got JSON:\n%s", got)
+	}
+}
+
+func TestPrintResultTextEmptyDesires(t *testing.T) {
+	data := map[string]interface{}{
+		"resource_type": "desires",
+		"items":         []interface{}{},
+	}
+	var buf bytes.Buffer
+	if err := PrintResult(&buf, FormatText, data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := buf.String(), "No desires found.\n"; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestPrintResultTextUnknownShapeReturnsError(t *testing.T) {
+	var buf bytes.Buffer
+	err := PrintResult(&buf, FormatText, map[string]interface{}{"items": []interface{}{map[string]interface{}{"name": "unknown"}}})
+	if err == nil || !strings.Contains(err.Error(), "resource_type") {
+		t.Fatalf("expected resource_type error, got %v", err)
+	}
+}
+
+func TestPrintResultTextRejectsNonObjectItems(t *testing.T) {
+	tests := []struct {
+		name string
+		item interface{}
+	}{
+		{name: "nil", item: nil},
+		{name: "scalar", item: "invalid"},
+		{name: "array", item: []interface{}{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := PrintResult(&buf, FormatText, map[string]interface{}{
+				"resource_type": "pods",
+				"items": []interface{}{
+					map[string]interface{}{"metadata": map[string]interface{}{"name": "valid"}},
+					tt.item,
+				},
+			})
+			if err == nil || !strings.Contains(err.Error(), "item 2 to be an object") {
+				t.Fatalf("expected item shape error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
 		name string
@@ -32,6 +109,7 @@ func TestConditionStatus(t *testing.T) {
 		"conditions": []interface{}{
 			map[string]interface{}{"type": "Ready", "status": "True"},
 			map[string]interface{}{"type": "Available", "status": "False"},
+			map[string]interface{}{"Type": "Successful", "Status": "True"},
 		},
 	}
 	if got := conditionStatus(status, "Ready"); got != "True" {
@@ -42,6 +120,9 @@ func TestConditionStatus(t *testing.T) {
 	}
 	if got := conditionStatus(status, "Missing"); got != "Unknown" {
 		t.Errorf("expected 'Unknown' for missing condition, got %q", got)
+	}
+	if got := conditionStatus(status, "Successful"); got != "True" {
+		t.Errorf("expected 'True', got %q", got)
 	}
 	if got := conditionStatus(map[string]interface{}{}, "Ready"); got != "Unknown" {
 		t.Errorf("expected 'Unknown' for no conditions, got %q", got)
@@ -619,5 +700,102 @@ func TestPrintPVTable(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestPrintDesiresTable(t *testing.T) {
+	var buf bytes.Buffer
+	data := map[string]interface{}{
+		"resource_type": "desires",
+		"items": []interface{}{
+			map[string]interface{}{
+				"database":                    "specs",
+				"desire_type":                 "apply",
+				"document_id":                 "4a762c3d-a635-561b-93bb-b0c5b7efcd99",
+				"create_time":                 "2026-09-07T14:00:03.185552Z",
+				"update_time":                 "2026-09-07T14:00:03.185552Z",
+				"observed_desire_update_time": nil,
+				"value": map[string]interface{}{
+					"targetItem": map[string]interface{}{
+						"group":     "cert-manager.io",
+						"resource":  "certificates",
+						"namespace": "clusters-test",
+						"name":      "external-api-cert",
+					},
+				},
+			},
+			map[string]interface{}{
+				"database":                    "status",
+				"desire_type":                 "apply",
+				"document_id":                 "4a762c3d-a635-561b-93bb-b0c5b7efcd99",
+				"create_time":                 "2026-09-07T14:00:03.589434Z",
+				"update_time":                 "2026-09-07T14:00:03.589434Z",
+				"observed_desire_update_time": "2026-09-07T14:00:03.185552Z",
+				"value": map[string]interface{}{
+					"appliedResourceGeneration": float64(987654321),
+					"conditions": []interface{}{
+						map[string]interface{}{"Type": "Successful", "Status": "True"},
+						map[string]interface{}{"Type": "Degraded", "Status": "False"},
+					},
+				},
+			},
+		},
+	}
+
+	if err := PrintResult(&buf, FormatText, data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.HasPrefix(out, "DATABASE") {
+		t.Errorf("expected DATABASE as the first column:\n%s", out)
+	}
+	for _, want := range []string{
+		"TYPE", "DATABASE", "DOCUMENT ID", "RESOURCE", "NAMESPACE", "NAME", "GENERATION", "SUCCESSFUL", "DEGRADED", "UPDATED", "OBSERVED",
+		"apply", "specs", "status", "4a762c3d", "certificates.cert-manager.io",
+		"clusters-test", "external-api-cert", "True", "False", "2026-09-07T14:00:03.185552Z", "2026-09-07T14:00:03.589434Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "CREATED") {
+		t.Errorf("output contains CREATED column:\n%s", out)
+	}
+	if strings.Contains(out, "4a762c3d-a635-561b-93bb-b0c5b7efcd99") {
+		t.Errorf("output contains full document ID:\n%s", out)
+	}
+	statusRowFound := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "status") {
+			statusRowFound = true
+			if !strings.Contains(line, "987654321") {
+				t.Errorf("status row missing generation:\n%s", line)
+			}
+		}
+	}
+	if !statusRowFound {
+		t.Errorf("output missing status row:\n%s", out)
+	}
+	if strings.Contains(out, "<nil>") {
+		t.Errorf("output contains nil value:\n%s", out)
+	}
+}
+
+func TestTransformShortID(t *testing.T) {
+	tests := []struct {
+		name string
+		in   interface{}
+		want string
+	}{
+		{name: "UUID", in: "4a762c3d-a635-561b-93bb-b0c5b7efcd99", want: "4a762c3d"},
+		{name: "short", in: "abc123", want: "abc123"},
+		{name: "missing", in: nil, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := TransformShortID(tt.in); got != tt.want {
+				t.Errorf("TransformShortID(%v) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
