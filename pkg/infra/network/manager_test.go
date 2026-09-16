@@ -46,6 +46,11 @@ func TestManagerFormatMethods(t *testing.T) {
 			method:   m.formatFirewallName,
 			expected: "test-infra-allow-kubelet",
 		},
+		{
+			name:     "When formatGeneveFirewallName is called it should return infraID-allow-geneve",
+			method:   m.formatGeneveFirewallName,
+			expected: "test-infra-allow-geneve",
+		},
 	}
 
 	for _, tt := range tests {

@@ -109,6 +109,41 @@ func (m *Manager) CreateFirewallRule(ctx context.Context, networkSelfLink string
 	return m.client.GetFirewall(ctx, firewallName)
 }
 
+func (m *Manager) CreateGeneveFirewallRule(ctx context.Context, networkSelfLink, sourceCIDR string) (*compute.Firewall, error) {
+	firewallName := m.formatGeneveFirewallName()
+	m.logger.Info("Creating geneve firewall rule", "name", firewallName)
+
+	firewall := &compute.Firewall{
+		Name:        firewallName,
+		Network:     networkSelfLink,
+		Description: fmt.Sprintf("Allow OVN-Kubernetes geneve overlay traffic (udp:6081) for HyperShift cluster %s", m.infraID),
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: "udp",
+				Ports:      []string{"6081"},
+			},
+		},
+		Direction: "INGRESS",
+		// Allow geneve overlay traffic from the node subnet only. OVN-Kubernetes
+		// encapsulates all pod/service traffic inside geneve tunnels between node
+		// chassis, so this node-to-node rule is required for cross-node pod
+		// networking; without it, cross-node pod traffic is silently dropped by
+		// the GCP implied-deny rule.
+		SourceRanges: []string{sourceCIDR},
+	}
+
+	if err := m.client.InsertFirewall(ctx, firewall); err != nil {
+		if isAlreadyExistsError(err) {
+			m.logger.Info("Geneve firewall rule already exists", "name", firewallName)
+			return m.client.GetFirewall(ctx, firewallName)
+		}
+		return nil, fmt.Errorf("failed to create geneve firewall rule: %w", err)
+	}
+
+	m.logger.Info("Created geneve firewall rule", "name", firewallName)
+	return m.client.GetFirewall(ctx, firewallName)
+}
+
 func (m *Manager) CreateSubnet(ctx context.Context, networkSelfLink, cidr string) (*compute.Subnetwork, error) {
 	subnetName := m.formatSubnetName()
 	m.logger.Info("Creating subnet", "name", subnetName, "cidr", cidr)
@@ -289,6 +324,22 @@ func (m *Manager) DeleteFirewallRule(ctx context.Context) error {
 	return nil
 }
 
+func (m *Manager) DeleteGeneveFirewallRule(ctx context.Context) error {
+	firewallName := m.formatGeneveFirewallName()
+	m.logger.Info("Deleting geneve firewall rule", "name", firewallName)
+
+	if err := m.client.DeleteFirewall(ctx, firewallName); err != nil {
+		if isNotFoundError(err) {
+			m.logger.Info("Geneve firewall rule not found, skipping", "name", firewallName)
+			return nil
+		}
+		return fmt.Errorf("failed to delete geneve firewall rule: %w", err)
+	}
+
+	m.logger.Info("Deleted geneve firewall rule", "name", firewallName)
+	return nil
+}
+
 func (m *Manager) DeleteNetwork(ctx context.Context) error {
 	networkName := m.formatNetworkName()
 	m.logger.Info("Deleting VPC network", "name", networkName)
@@ -327,6 +378,10 @@ func (m *Manager) formatNATName() string {
 
 func (m *Manager) formatFirewallName() string {
 	return fmt.Sprintf("%s-allow-kubelet", m.infraID)
+}
+
+func (m *Manager) formatGeneveFirewallName() string {
+	return fmt.Sprintf("%s-allow-geneve", m.infraID)
 }
 
 // ============================================================================

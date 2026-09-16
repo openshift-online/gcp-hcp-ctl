@@ -23,17 +23,18 @@ type CreateOptions struct {
 }
 
 type CreateOutput struct {
-	Region           string `json:"region"`
-	ProjectID        string `json:"projectId"`
-	InfraID          string `json:"infraId"`
-	NetworkName      string `json:"networkName"`
-	NetworkSelfLink  string `json:"networkSelfLink"`
-	SubnetName       string `json:"subnetName"`
-	SubnetSelfLink   string `json:"subnetSelfLink"`
-	SubnetCIDR       string `json:"subnetCidr"`
-	RouterName       string `json:"routerName"`
-	NATName          string `json:"natName"`
-	FirewallRuleName string `json:"firewallRuleName"`
+	Region                 string `json:"region"`
+	ProjectID              string `json:"projectId"`
+	InfraID                string `json:"infraId"`
+	NetworkName            string `json:"networkName"`
+	NetworkSelfLink        string `json:"networkSelfLink"`
+	SubnetName             string `json:"subnetName"`
+	SubnetSelfLink         string `json:"subnetSelfLink"`
+	SubnetCIDR             string `json:"subnetCidr"`
+	RouterName             string `json:"routerName"`
+	NATName                string `json:"natName"`
+	FirewallRuleName       string `json:"firewallRuleName"`
+	GeneveFirewallRuleName string `json:"geneveFirewallRuleName"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -47,6 +48,7 @@ func NewCreateCommand() *cobra.Command {
 		Long: `Create network infrastructure including:
   - VPC network (custom subnet mode)
   - Firewall rule for kubelet access (TCP 10250)
+  - Firewall rule for OVN-Kubernetes geneve overlay traffic (UDP 6081)
   - Subnet with Private Google Access
   - Cloud Router
   - Cloud NAT
@@ -142,6 +144,12 @@ func (o *CreateOptions) CreateNetwork(ctx context.Context, logger logr.Logger) (
 		return nil, fmt.Errorf("failed to create firewall rule: %w", err)
 	}
 	result.FirewallRuleName = firewall.Name
+
+	geneveFirewall, err := mgr.CreateGeneveFirewallRule(ctx, network.SelfLink, o.VPCCidr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create geneve firewall rule: %w", err)
+	}
+	result.GeneveFirewallRuleName = geneveFirewall.Name
 
 	subnet, err := mgr.CreateSubnet(ctx, network.SelfLink, o.VPCCidr)
 	if err != nil {

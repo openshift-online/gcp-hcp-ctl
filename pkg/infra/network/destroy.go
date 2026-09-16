@@ -29,8 +29,9 @@ func NewDestroyCommand() *cobra.Command {
   1. Cloud NAT (removed from router)
   2. Cloud Router
   3. Subnet
-  4. Firewall rule
-  5. VPC network
+  4. Geneve firewall rule
+  5. Firewall rule
+  6. VPC network
 
 All delete operations tolerate not-found errors (idempotent).`,
 		Args:         cobra.ExactArgs(1),
@@ -113,6 +114,10 @@ func (o *DestroyOptions) DestroyNetwork(ctx context.Context, logger logr.Logger)
 		return fmt.Errorf("failed to delete subnet: %w", err)
 	}
 
+	if err := mgr.DeleteGeneveFirewallRule(ctx); err != nil {
+		return fmt.Errorf("failed to delete geneve firewall rule: %w", err)
+	}
+
 	if err := mgr.DeleteFirewallRule(ctx); err != nil {
 		return fmt.Errorf("failed to delete firewall rule: %w", err)
 	}
@@ -129,6 +134,7 @@ func confirmDestroy(infraID, projectID, region string) (bool, error) {
 	fmt.Fprintf(os.Stderr, "  - Cloud NAT\n")
 	fmt.Fprintf(os.Stderr, "  - Cloud Router\n")
 	fmt.Fprintf(os.Stderr, "  - Subnet\n")
+	fmt.Fprintf(os.Stderr, "  - Geneve firewall rule\n")
 	fmt.Fprintf(os.Stderr, "  - Firewall rule\n")
 	fmt.Fprintf(os.Stderr, "  - VPC network\n")
 	fmt.Fprintf(os.Stderr, "\nAre you sure? [y/N]: ")
