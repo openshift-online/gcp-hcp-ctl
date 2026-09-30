@@ -13,6 +13,7 @@ import (
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/role"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/rolebinding"
+	versions "github.com/openshift-online/gcp-hcp-ctl/pkg/version"
 
 	"github.com/spf13/cobra"
 )
@@ -84,6 +85,7 @@ func init() {
 	rootCmd.AddCommand(rolebinding.NewRoleBindingCmd())
 	rootCmd.AddCommand(cluster.NewClusterCmd())
 	rootCmd.AddCommand(nodepool.NewNodePoolCmd())
+	rootCmd.AddCommand(versions.NewVersionCmd())
 }
 
 // Execute runs the root command.
