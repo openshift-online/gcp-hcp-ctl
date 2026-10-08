@@ -11,6 +11,7 @@ import (
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/network"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/nodepool"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/ops"
+	versions "github.com/openshift-online/gcp-hcp-ctl/pkg/version"
 
 	"github.com/spf13/cobra"
 )
@@ -53,7 +54,15 @@ func loadConfig(cmd *cobra.Command) error {
 		region = cfg.Region
 	}
 	if !cmd.Flags().Changed("output") && cfg.Output != "" {
-		outputFormat = cfg.Output
+		// Update the persistent flag's value so commands reading the inherited
+		// flag see the configured format as well as the bound root variable.
+		flag := cmd.Root().PersistentFlags().Lookup("output")
+		if flag == nil {
+			return fmt.Errorf("root output flag is not registered")
+		}
+		if err := flag.Value.Set(cfg.Output); err != nil {
+			return fmt.Errorf("setting configured output format: %w", err)
+		}
 	}
 	if !cmd.Flags().Changed("api-endpoint") && apiEndpoint == "" && cfg.APIEndpoint != "" {
 		apiEndpoint = cfg.APIEndpoint
@@ -80,6 +89,7 @@ func init() {
 	rootCmd.AddCommand(network.NewNetworkCmd())
 	rootCmd.AddCommand(cluster.NewClusterCmd())
 	rootCmd.AddCommand(nodepool.NewNodePoolCmd())
+	rootCmd.AddCommand(versions.NewVersionCmd())
 }
 
 // Execute runs the root command.
