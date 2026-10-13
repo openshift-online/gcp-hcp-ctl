@@ -157,6 +157,11 @@ func (c *Client) Channels() ChannelInterface {
 	return &channelClient{restClient: c.restClient}
 }
 
+// ControlPlaneUpgradeRequests returns a client for one-time manual requests.
+func (c *Client) ControlPlaneUpgradeRequests() ControlPlaneUpgradeRequestInterface {
+	return &controlPlaneUpgradeRequestClient{restClient: c.restClient}
+}
+
 // ClusterInterface defines operations on Cluster resources.
 type ClusterInterface interface {
 	Create(ctx context.Context, namespace string, cluster *gcpv1.Cluster) (*gcpv1.Cluster, error)
