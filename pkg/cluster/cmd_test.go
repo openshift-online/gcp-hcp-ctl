@@ -218,6 +218,71 @@ func TestReleaseVersion(t *testing.T) {
 			t.Errorf("expected '<none>', got %q", got)
 		}
 	})
+
+	t.Run("When an observed version exists it should return that version", func(t *testing.T) {
+		c := &gcpv1.Cluster{
+			Spec: gcpv1.ClusterSpec{Release: gcpv1.ReleaseSpec{Version: "4.23.0-ec.1"}},
+			Status: gcpv1.ClusterStatus{
+				HostedClusterResult: &gcpv1.HostedClusterResult{Version: "4.22.14"},
+			},
+		}
+		if got := releaseVersion(c); got != "4.22.14" {
+			t.Errorf("expected '4.22.14', got %q", got)
+		}
+	})
+}
+
+func TestPrintClusterVersionLabels(t *testing.T) {
+	tests := []struct {
+		name    string
+		current string
+		want    []string
+		notWant []string
+	}{
+		{
+			name:    "creating",
+			want:    []string{"Version:         4.23.0-ec.1 (candidate)"},
+			notWant: []string{"Target Version:"},
+		},
+		{
+			name:    "upgrading",
+			current: "4.22.14",
+			want:    []string{"Version:         4.22.14 (candidate)", "Target Version:  4.23.0-ec.1 (candidate)"},
+			notWant: []string{"Version:         4.23.0-ec.1"},
+		},
+		{
+			name:    "completed",
+			current: "4.23.0-ec.1",
+			want:    []string{"Version:         4.23.0-ec.1 (candidate)"},
+			notWant: []string{"Target Version:"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &gcpv1.Cluster{
+				Spec: gcpv1.ClusterSpec{
+					Release: gcpv1.ReleaseSpec{Version: "4.23.0-ec.1", ChannelGroup: "candidate"},
+				},
+			}
+			if tt.current != "" {
+				c.Status.HostedClusterResult = &gcpv1.HostedClusterResult{Version: tt.current}
+			}
+			var buf bytes.Buffer
+			if err := printCluster(&buf, c, "text"); err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(buf.String(), want) {
+					t.Errorf("cluster output missing %q:\n%s", want, buf.String())
+				}
+			}
+			for _, notWant := range tt.notWant {
+				if strings.Contains(buf.String(), notWant) {
+					t.Errorf("cluster output unexpectedly contains %q:\n%s", notWant, buf.String())
+				}
+			}
+		})
+	}
 }
 
 func TestFindCondition(t *testing.T) {

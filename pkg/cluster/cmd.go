@@ -26,7 +26,7 @@ func NewClusterCmd() *cobra.Command {
 	clusterCmd = &cobra.Command{
 		Use:   "cluster",
 		Short: "Manage GCP HCP clusters",
-		Long:  `Create, get, list, delete, and log in to GCP HCP clusters via the platform API server.`,
+		Long:  `Create, get, list, delete, upgrade, and log in to GCP HCP clusters via the platform API server.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if parent := clusterCmd.Parent(); parent != nil && parent.PersistentPreRunE != nil {
 				if err := parent.PersistentPreRunE(cmd, args); err != nil {
@@ -52,6 +52,7 @@ func NewClusterCmd() *cobra.Command {
 	clusterCmd.AddCommand(newListCmd())
 	clusterCmd.AddCommand(newDeleteCmd())
 	clusterCmd.AddCommand(newLoginCmd())
+	clusterCmd.AddCommand(newUpgradeCmd())
 
 	return clusterCmd
 }
@@ -99,20 +100,20 @@ func printCluster(w io.Writer, c *gcpv1.Cluster, format string) error {
 			output.Age(c.CreationTimestamp.UTC().Format(time.RFC3339)))
 	}
 
-	if c.Spec.Release.Version != "" {
-		ver := c.Spec.Release.Version
-		if c.Spec.Release.ChannelGroup != "" {
-			ver = fmt.Sprintf("%s (%s)", ver, c.Spec.Release.ChannelGroup)
-		}
-		fmt.Fprintf(bw, "Version:         %s\n", ver)
+	channelGroup := ""
+	if c.Spec.Release.ChannelGroup != "" {
+		channelGroup = fmt.Sprintf(" (%s)", c.Spec.Release.ChannelGroup)
+	}
+	if version := displayVersion(c); version != "" {
+		fmt.Fprintf(bw, "Version:         %s%s\n", version, channelGroup)
 	}
 
 	if hcr := c.Status.HostedClusterResult; hcr != nil {
+		if hcr.Version != "" && c.Spec.Release.Version != "" && hcr.Version != c.Spec.Release.Version {
+			fmt.Fprintf(bw, "Target Version:  %s%s\n", c.Spec.Release.Version, channelGroup)
+		}
 		if hcr.APIEndpoint != "" {
 			fmt.Fprintf(bw, "API Endpoint:    %s\n", hcr.APIEndpoint)
-		}
-		if hcr.Version != "" {
-			fmt.Fprintf(bw, "HC Version:      %s\n", hcr.Version)
 		}
 	}
 
@@ -277,8 +278,15 @@ func truncateString(s string, maxRunes int) string {
 }
 
 func releaseVersion(c *gcpv1.Cluster) string {
-	if c.Spec.Release.Version != "" {
-		return c.Spec.Release.Version
+	if version := displayVersion(c); version != "" {
+		return version
 	}
 	return "<none>"
+}
+
+func displayVersion(c *gcpv1.Cluster) string {
+	if hcr := c.Status.HostedClusterResult; hcr != nil && hcr.Version != "" {
+		return hcr.Version
+	}
+	return c.Spec.Release.Version
 }
