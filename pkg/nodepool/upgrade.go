@@ -118,8 +118,8 @@ func newUpgradeStatusCmd() *cobra.Command {
 
 func printUpgradeStatus(cmd *cobra.Command, request *platformapi.NodePoolUpgradeRequest) error {
 	w := cmd.OutOrStdout()
-	if _, err := fmt.Fprintf(w, "Name:       %s\nCluster:    %s\nNodePool:   %s\nTarget:     %s\nStatus:     %s\n",
-		request.Name, request.Spec.ClusterID, request.Spec.NodePoolID, request.Spec.TargetVersion, upgradePhase(request.Status)); err != nil {
+	if _, err := fmt.Fprintf(w, "Name:       %s\nCluster:    %s\nNodePool:   %s\nTarget:     %s\n",
+		request.Name, request.Spec.ClusterID, request.Spec.NodePoolID, request.Spec.TargetVersion); err != nil {
 		return err
 	}
 	if request.Status == nil {
@@ -150,45 +150,4 @@ func printUpgradeStatus(cmd *cobra.Command, request *platformapi.NodePoolUpgrade
 		table.AddRow(condition.Type, string(condition.Status), condition.Reason, condition.Message)
 	}
 	return table.Flush()
-}
-
-func upgradePhase(status *platformapi.NodePoolUpgradeRequestStatus) string {
-	if status == nil {
-		return "Pending"
-	}
-	for _, condition := range status.Conditions {
-		if condition.Type == "Failed" && condition.Status == metav1.ConditionTrue {
-			return "Failed"
-		}
-	}
-	if status.CompletedTime != nil {
-		return "Completed"
-	}
-	for _, condition := range status.Conditions {
-		if condition.Type == "Completed" && condition.Status == metav1.ConditionTrue {
-			return "Completed"
-		}
-		if condition.Type == "Accepted" && condition.Status == metav1.ConditionFalse {
-			return "Rejected"
-		}
-	}
-	if status.StartedTime != nil {
-		return "Progressing"
-	}
-	for _, condition := range status.Conditions {
-		if condition.Type == "Progressing" && condition.Status == metav1.ConditionTrue {
-			return "Progressing"
-		}
-	}
-	if status.AcceptedTime != nil {
-		return "Accepted"
-	}
-	for _, condition := range status.Conditions {
-		if condition.Status == metav1.ConditionTrue {
-			if condition.Type == "Accepted" || condition.Type == "Scheduled" {
-				return condition.Type
-			}
-		}
-	}
-	return "Pending"
 }

@@ -99,7 +99,7 @@ func TestUpgradeCommandAndStatus(t *testing.T) {
 	}
 }
 
-func TestPrintUpgradeStatusPending(t *testing.T) {
+func TestPrintUpgradeStatusWithoutBackendStatus(t *testing.T) {
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -110,12 +110,12 @@ func TestPrintUpgradeStatusPending(t *testing.T) {
 	if err := printUpgradeStatus(cmd, request); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "Status:     Pending") {
+	if strings.Contains(output.String(), "Status:") || strings.Contains(output.String(), "Conditions:") {
 		t.Errorf("output = %q", output.String())
 	}
 }
 
-func TestPrintUpgradeStatusCompletedWithoutConditions(t *testing.T) {
+func TestPrintUpgradeStatusDoesNotInferPhaseFromTimestamps(t *testing.T) {
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -128,7 +128,7 @@ func TestPrintUpgradeStatusCompletedWithoutConditions(t *testing.T) {
 	if err := printUpgradeStatus(cmd, request); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "Status:     Completed") || !strings.Contains(output.String(), "Completed:  2026-10-20T22:14:49Z") {
+	if !strings.Contains(output.String(), "Completed:  2026-10-20T22:14:49Z") || strings.Contains(output.String(), "Status:") {
 		t.Errorf("output = %q", output.String())
 	}
 }
