@@ -71,7 +71,7 @@ config key.
 
 ### Nodepool Management (`nodepool`)
 
-Create, inspect, list, scale, and delete nodepools via the platform API server.
+Create, inspect, list, scale, upgrade, and delete nodepools via the platform API server.
 
 ```bash
 # Create a nodepool in a cluster
@@ -95,6 +95,14 @@ gcphcpctl nodepool list -o json
 
 # Scale a nodepool
 gcphcpctl nodepool scale my-nodepool --replicas 5
+
+# Request an immediate or scheduled upgrade (returns a request name)
+gcphcpctl nodepool upgrade my-nodepool --cluster my-cluster --version 4.22.17
+gcphcpctl nodepool upgrade my-nodepool --cluster my-cluster --version 4.22.17 \
+  --start 2026-10-21T02:00:00Z
+
+# Inspect request acceptance and rollout conditions
+gcphcpctl nodepool upgrade status <request-name> --cluster my-cluster
 
 # Delete a nodepool (requires confirmation)
 gcphcpctl nodepool delete my-nodepool --confirm
@@ -449,7 +457,7 @@ cmd/gcphcpctl/        Entry point for the gcphcpctl binary
 pkg/
 ├── cli/              Root command, version, completion
 ├── cluster/          Cluster lifecycle commands (create, get, list, delete, login)
-├── nodepool/         Nodepool commands (create, get, list, scale, delete)
+├── nodepool/         Nodepool commands (create, get, list, scale, upgrade, delete)
 ├── auth/             Authentication and token management
 ├── platformapi/      Platform API client
 ├── discovery/        Endpoint discovery manifest client and resolver
@@ -508,7 +516,7 @@ The CLI has the following command categories:
   by resolving the cluster's API endpoint from the platform API status data. Cluster
   lookup supports both name and ID.
 
-- **Nodepool commands** (`nodepool`): Create, inspect, list, scale, and delete
+- **Nodepool commands** (`nodepool`): Create, inspect, list, scale, upgrade, and delete
   nodepools within clusters. Nodepools share the same authenticated client setup,
   output formatting (`text`/`json`/`yaml`), and name-or-ID resolution patterns
   as the cluster commands.
