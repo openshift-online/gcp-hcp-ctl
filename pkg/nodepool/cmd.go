@@ -30,7 +30,7 @@ func NewNodePoolCmd(effective *config.Config) *cobra.Command {
 	npCmd = &cobra.Command{
 		Use:          "nodepool",
 		Short:        "Manage nodepools",
-		Long:         `Create, get, list, delete, and scale nodepools via the platform API server.`,
+		Long:         `Create, get, list, delete, scale, and upgrade nodepools via the platform API server.`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if parent := npCmd.Parent(); parent != nil && parent.PersistentPreRunE != nil {
@@ -59,6 +59,7 @@ func NewNodePoolCmd(effective *config.Config) *cobra.Command {
 	npCmd.AddCommand(newListCmd())
 	npCmd.AddCommand(newDeleteCmd())
 	npCmd.AddCommand(newScaleCmd())
+	npCmd.AddCommand(newUpgradeCmd())
 
 	return npCmd
 }
