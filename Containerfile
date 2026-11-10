@@ -5,7 +5,9 @@ WORKDIR /opt/app-root/src
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+COPY .git .git
 
 RUN set -eux; \
     git config --global --add safe.directory '*'; \
@@ -29,3 +31,4 @@ RUN set -eux; \
 FROM registry.access.redhat.com/ubi9/ubi-minimal
 
 COPY --from=builder /opt/app-root/src/releases /releases
+USER 1001
