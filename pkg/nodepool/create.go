@@ -139,7 +139,7 @@ func (o *createOptions) buildNodePool(npName string) *gcpv1.NodePool {
 					Subnet:      o.subnet,
 				},
 			},
-			Release: gcpv1.ReleaseSpec{
+			Release: gcpv1.NodePoolReleaseSpec{
 				Version:      o.version,
 				ChannelGroup: o.channelGroup,
 			},

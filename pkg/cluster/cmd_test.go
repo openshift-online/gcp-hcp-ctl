@@ -280,7 +280,7 @@ func TestReleaseVersion(t *testing.T) {
 	t.Run("When release version is set it should return it", func(t *testing.T) {
 		c := &gcpv1.Cluster{
 			Spec: gcpv1.ClusterSpec{
-				Release: gcpv1.ReleaseSpec{Version: "4.22.0"},
+				Release: gcpv1.ClusterReleaseSpec{Version: "4.22.0"},
 			},
 		}
 		if got := releaseVersion(c); got != "4.22.0" {
@@ -299,7 +299,7 @@ func TestReleaseVersion(t *testing.T) {
 
 	t.Run("When an observed version exists it should return that version", func(t *testing.T) {
 		c := &gcpv1.Cluster{
-			Spec: gcpv1.ClusterSpec{Release: gcpv1.ReleaseSpec{Version: "4.23.0-ec.1"}},
+			Spec: gcpv1.ClusterSpec{Release: gcpv1.ClusterReleaseSpec{Version: "4.23.0-ec.1"}},
 			Status: gcpv1.ClusterStatus{
 				HostedClusterResult: &gcpv1.HostedClusterResult{Version: "4.22.14"},
 			},
@@ -339,7 +339,7 @@ func TestPrintClusterVersionLabels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &gcpv1.Cluster{
 				Spec: gcpv1.ClusterSpec{
-					Release: gcpv1.ReleaseSpec{Version: "4.23.0-ec.1", ChannelGroup: "candidate"},
+					Release: gcpv1.ClusterReleaseSpec{Version: "4.23.0-ec.1", ChannelGroup: "candidate"},
 				},
 			}
 			if tt.current != "" {
