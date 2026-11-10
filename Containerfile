@@ -29,5 +29,10 @@ RUN set -eux; \
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal
 
+LABEL org.opencontainers.image.title="gcp-hcp-ctl" \
+      org.opencontainers.image.description="CLI for managing GCP Hosted Control Plane (HCP) clusters" \
+      org.opencontainers.image.source="https://github.com/openshift-online/gcp-hcp-ctl" \
+      org.opencontainers.image.vendor="Red Hat"
+
 COPY --from=builder /opt/app-root/src/releases /releases
 USER 1001
