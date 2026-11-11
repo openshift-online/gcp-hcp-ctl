@@ -18,12 +18,15 @@ func TestUpgradeCommandPatch(t *testing.T) {
 		name       string
 		args       []string
 		start      any
+		startSet   bool
 		jsonOutput bool
 	}{
-		{name: "immediate clears pending schedule", args: []string{"workers", "--version", "4.22.16"}},
+		{name: "omitted start time preserves schedule", args: []string{"workers", "--version", "4.22.16"}},
+		{name: "explicit clear sends null", args: []string{"workers", "--version", "4.22.16", "--clear-start-time"}, startSet: true},
+		{name: "false clear flag preserves schedule", args: []string{"workers", "--version", "4.22.16", "--clear-start-time=false"}},
 		{name: "structured response", args: []string{"workers", "--version", "4.22.16", "-o", "json"}, jsonOutput: true},
 		{name: "candidate release", args: []string{"workers", "--version", "5.1.0-ec.2"}},
-		{name: "scheduled normalizes time", args: []string{"workers", "--version", "4.22.16", "--start-time", "2026-11-06T04:00:00+01:00"}, start: "2026-11-06T03:00:00Z"},
+		{name: "scheduled normalizes time", args: []string{"workers", "--version", "4.22.16", "--start-time", "2026-11-06T04:00:00+01:00"}, start: "2026-11-06T03:00:00Z", startSet: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -41,12 +44,16 @@ func TestUpgradeCommandPatch(t *testing.T) {
 				}
 				spec := body["spec"].(map[string]any)
 				release := spec["release"].(map[string]any)
-				if len(body) != 1 || len(spec) != 1 || len(release) != 2 || release["version"] != tc.args[2] {
+				wantFields := 1
+				if tc.startSet {
+					wantFields++
+				}
+				if len(body) != 1 || len(spec) != 1 || len(release) != wantFields || release["version"] != tc.args[2] {
 					t.Errorf("unexpected patch: %#v", body)
 				}
 				start, present := release["upgradeStartTime"]
-				if !present || start != tc.start {
-					t.Errorf("upgradeStartTime = %#v, want %#v", start, tc.start)
+				if present != tc.startSet || start != tc.start {
+					t.Errorf("upgradeStartTime = %#v (present=%t), want %#v (present=%t)", start, present, tc.start, tc.startSet)
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{"apiVersion": "gcp.managed.openshift.io/v1", "kind": "NodePool", "metadata": map[string]any{"name": "workers"}, "spec": map[string]any{"release": release}, "status": map[string]any{"version": "4.22.14"}})
@@ -84,6 +91,8 @@ func TestUpgradeCommandPatch(t *testing.T) {
 
 func TestUpgradeCommandInvalidInput(t *testing.T) {
 	for _, args := range [][]string{
+		{"workers", "--version", "4.22.16", "--start-time", ""},
+		{"workers", "--version", "4.22.16", "--start-time", "2026-11-20T03:00:00Z", "--clear-start-time"},
 		{}, {"workers"}, {"workers", "--version", "invalid"}, {"workers", "--version", "4.22"}, {"workers", "--version", "v4.22.16"}, {"workers", "--version", "4.22.16+build"}, {"workers", "--version", "4.22.16", "--start-time", "tomorrow"}, {"workers", "extra", "--version", "4.22.16"},
 	} {
 		cmd := newUpgradeCmd()

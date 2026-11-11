@@ -96,12 +96,15 @@ gcphcpctl nodepool list -o json
 # Scale a nodepool
 gcphcpctl nodepool scale my-nodepool --replicas 5
 
-# Request an immediate upgrade (also clears any pending schedule)
+# Request an upgrade (preserves an existing schedule; immediate if none exists)
 gcphcpctl nodepool upgrade my-nodepool --version 4.22.16
 
 # Schedule the earliest upgrade start (RFC 3339)
 gcphcpctl nodepool upgrade my-nodepool --version 4.22.16 \
   --start-time 2026-11-20T03:00:00Z
+
+# Explicitly clear a pending schedule to make the upgrade immediately eligible
+gcphcpctl nodepool upgrade my-nodepool --version 4.22.16 --clear-start-time
 
 # Inspect upgrade progress and conditions on the NodePool
 gcphcpctl nodepool get my-nodepool
@@ -115,7 +118,9 @@ on the existing NodePool. Targets require a full version, including the patch an
 any prerelease suffix (for example, `5.1.0-ec.2`). The server validates eligibility
 and rejects release changes while an upgrade is in progress. Repeating identical
 settings is idempotent. `--start-time` is the earliest permitted start, not a
-promise of an exact start time.
+promise of an exact start time. Omitting `--start-time` preserves the existing
+schedule. `--clear-start-time` explicitly sends `upgradeStartTime: null` to remove
+it; this flag cannot be combined with `--start-time`.
 
 Text output shows the observed `status.version` as Version and displays a separate
 Target Version while an upgrade is pending or progressing. Upgrade conditions
