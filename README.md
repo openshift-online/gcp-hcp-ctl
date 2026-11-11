@@ -71,7 +71,7 @@ config key.
 
 ### Nodepool Management (`nodepool`)
 
-Create, inspect, list, scale, and delete nodepools via the platform API server.
+Create, inspect, list, scale, upgrade, and delete nodepools via the platform API server.
 
 ```bash
 # Create a nodepool in a cluster
@@ -96,9 +96,30 @@ gcphcpctl nodepool list -o json
 # Scale a nodepool
 gcphcpctl nodepool scale my-nodepool --replicas 5
 
+# Request an immediate upgrade (also clears any pending schedule)
+gcphcpctl nodepool upgrade my-nodepool --version 4.22.16
+
+# Schedule the earliest upgrade start (RFC 3339)
+gcphcpctl nodepool upgrade my-nodepool --version 4.22.16 \
+  --start-time 2026-11-20T03:00:00Z
+
+# Inspect upgrade progress and conditions on the NodePool
+gcphcpctl nodepool get my-nodepool
+
 # Delete a nodepool (requires confirmation)
 gcphcpctl nodepool delete my-nodepool --confirm
 ```
+
+Upgrades update `spec.release.version` and optional `spec.release.upgradeStartTime`
+on the existing NodePool. Targets require a full version, including the patch and
+any prerelease suffix (for example, `5.1.0-ec.2`). The server validates eligibility
+and rejects release changes while an upgrade is in progress. Repeating identical
+settings is idempotent. `--start-time` is the earliest permitted start, not a
+promise of an exact start time.
+
+Text output shows the observed `status.version` as Version and displays a separate
+Target Version while an upgrade is pending or progressing. Upgrade conditions
+appear in `nodepool get`; `-o json` and `-o yaml` return the NodePool resource.
 
 Nodepool commands use the same endpoint discovery as cluster commands, and the
 same `GCPHCPCTL_API_ENDPOINT` / `api_endpoint` escape hatch to bypass it.
@@ -452,7 +473,7 @@ cmd/gcphcpctl/        Entry point for the gcphcpctl binary
 pkg/
 ├── cli/              Root command, version, completion
 ├── cluster/          Cluster lifecycle commands (create, get, list, delete, login)
-├── nodepool/         Nodepool commands (create, get, list, scale, delete)
+├── nodepool/         Nodepool commands (create, get, list, scale, upgrade, delete)
 ├── auth/             Authentication and token management
 ├── platformapi/      Platform API client
 ├── discovery/        Endpoint discovery manifest client and resolver

@@ -264,26 +264,48 @@ func TestFindCondition(t *testing.T) {
 	})
 }
 
-func TestReleaseVersion(t *testing.T) {
-	t.Run("When release version is set it should return it", func(t *testing.T) {
+func TestObservedVersion(t *testing.T) {
+	t.Run("uses observed version rather than desired release", func(t *testing.T) {
 		np := &gcpv1.NodePool{
-			Spec: gcpv1.NodePoolSpec{
-				Release: gcpv1.ReleaseSpec{Version: "4.22.0"},
-			},
+			Spec:   gcpv1.NodePoolSpec{Release: gcpv1.NodePoolReleaseSpec{Version: "4.22.16"}},
+			Status: gcpv1.NodePoolStatus{Version: "4.22.14"},
 		}
-		if got := releaseVersion(np); got != "4.22.0" {
-			t.Errorf("expected '4.22.0', got %q", got)
+		if got := observedVersion(np); got != "4.22.14" {
+			t.Errorf("expected observed version 4.22.14, got %q", got)
 		}
 	})
+	t.Run("does not substitute desired version before installation", func(t *testing.T) {
+		np := &gcpv1.NodePool{Spec: gcpv1.NodePoolSpec{Release: gcpv1.NodePoolReleaseSpec{Version: "4.22.16"}}}
+		if got := observedVersion(np); got != "<unknown>" {
+			t.Errorf("expected unknown observed version, got %q", got)
+		}
+	})
+}
 
-	t.Run("When version is empty it should return <none>", func(t *testing.T) {
-		np := &gcpv1.NodePool{
-			Spec: gcpv1.NodePoolSpec{},
-		}
-		if got := releaseVersion(np); got != "<none>" {
-			t.Errorf("expected '<none>', got %q", got)
-		}
-	})
+func TestTargetVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name, current, desired, condition, want string
+	}{
+		{name: "initial installation", desired: "4.22.16", want: "-"},
+		{name: "no upgrade", current: "4.22.16", desired: "4.22.16", want: "-"},
+		{name: "upgrade requested", current: "4.22.14", desired: "4.22.16", want: "4.22.16"},
+		{name: "scheduled upgrade", current: "4.22.14", desired: "4.22.16", condition: "NodePoolUpgradeScheduled", want: "4.22.16"},
+		{name: "canceled request with stale scheduled condition", current: "4.22.16", desired: "4.22.16", condition: "NodePoolUpgradeScheduled", want: "-"},
+		{name: "waiting for healthy completion", current: "4.22.16", desired: "4.22.16", condition: "NodePoolUpgradeProgressing", want: "4.22.16"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			np := &gcpv1.NodePool{
+				Spec:   gcpv1.NodePoolSpec{Release: gcpv1.NodePoolReleaseSpec{Version: tc.desired}},
+				Status: gcpv1.NodePoolStatus{Version: tc.current},
+			}
+			if tc.condition != "" {
+				np.Status.Conditions = []metav1.Condition{{Type: tc.condition, Status: metav1.ConditionTrue}}
+			}
+			if got := targetVersion(np); got != tc.want {
+				t.Errorf("target version = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestNodeCount(t *testing.T) {

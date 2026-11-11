@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TestPlatformRoleWireTypes checks registration, decoding and round trips for CLI-local
+// TestPlatformRoleWireTypes checks registration, decoding and round trips for the SDK
 // catalog types.
 func TestPlatformRoleWireTypes(t *testing.T) {
 	wire := `{"apiVersion":"gcp.managed.openshift.io/v1","kind":"PlatformRole","metadata":{"name":"future-role","creationTimestamp":"2026-01-01T00:00:00Z"},"spec":{"permissions":["cluster.get","rolebinding.list"]}}`
