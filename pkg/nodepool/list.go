@@ -45,7 +45,7 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			t := output.NewTable(out, "NAME", "CLUSTER", "REGION", "REPLICAS", "INSTANCE", "VERSION", "STATUS", "AGE")
+			t := output.NewTable(out, "NAME", "CLUSTER", "REGION", "REPLICAS", "INSTANCE", "VERSION", "TARGET VERSION", "STATUS", "AGE")
 			for _, np := range allNodePools {
 				t.AddRow(
 					np.Name,
@@ -53,7 +53,8 @@ func newListCmd() *cobra.Command {
 					regionFromZone(&np),
 					nodeCount(&np),
 					machineType(&np),
-					releaseVersion(&np),
+					observedVersion(&np),
+					targetVersion(&np),
 					nodePoolStatus(&np),
 					output.Age(np.CreationTimestamp.UTC().Format(time.RFC3339)),
 				)
