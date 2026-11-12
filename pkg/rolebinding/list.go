@@ -35,9 +35,9 @@ func newListCmd() *cobra.Command {
 		if access.Format(cmd) != output.FormatText {
 			return access.Structured(cmd, list)
 		}
-		t := output.NewTable(cmd.OutOrStdout(), "NAME", "SUBJECT", "ROLE KIND", "ROLE NAME", "AGE")
+		t := output.NewTable(cmd.OutOrStdout(), "NAME", "SUBJECT", "ROLE KIND", "ROLE NAME", "AGE", "CONDITION")
 		for _, b := range list.Items {
-			t.AddRow(b.Name, b.Spec.Subject, b.Spec.RoleRef.Kind, b.Spec.RoleRef.Name, access.Age(b.CreationTimestamp))
+			t.AddRow(b.Name, b.Spec.Subject, b.Spec.RoleRef.Kind, b.Spec.RoleRef.Name, access.Age(b.CreationTimestamp), conditionPreview(b.Spec.Condition))
 		}
 		return t.Flush()
 	}}

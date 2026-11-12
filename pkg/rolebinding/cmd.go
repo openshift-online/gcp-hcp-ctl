@@ -13,7 +13,7 @@ import (
 
 func NewRoleBindingCmd() *cobra.Command {
 	cmd := access.Group("rolebinding", "Manage named user-email grants in the selected project")
-	cmd.AddCommand(newCreateCmd(), newListCmd(), newGetCmd(), newDeleteCmd())
+	cmd.AddCommand(newCreateCmd(), newUpdateCmd(), newListCmd(), newGetCmd(), newDeleteCmd())
 	return cmd
 }
 
@@ -39,5 +39,9 @@ func printBinding(cmd *cobra.Command, b *gcpv1.RoleBinding) error {
 		return access.Structured(cmd, b)
 	}
 	_, err := fmt.Fprintf(cmd.OutOrStdout(), "Name: %s\nNamespace: %s\nAge: %s\nSubject: %s\nRole Kind: %s\nRole Name: %s\n", b.Name, b.Namespace, access.Age(b.CreationTimestamp), b.Spec.Subject, b.Spec.RoleRef.Kind, b.Spec.RoleRef.Name)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Condition:\n--condition %s\n", conditionArgument(b.Spec.Condition))
 	return err
 }

@@ -16,7 +16,7 @@ import (
 )
 
 func TestAccessCommandDiscovery(t *testing.T) {
-	for group, verbs := range map[string][]string{"role": {"create", "update", "list", "get", "delete"}, "rolebinding": {"create", "list", "get", "delete"}} {
+	for group, verbs := range map[string][]string{"role": {"create", "update", "list", "get", "delete"}, "rolebinding": {"create", "update", "list", "get", "delete"}} {
 		for _, verb := range verbs {
 			cmd, remaining, err := newRootCmd().Find([]string{group, verb})
 			if err != nil || len(remaining) != 0 || cmd.Name() != verb || cmd.Parent().Name() != group {

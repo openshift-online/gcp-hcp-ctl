@@ -2,10 +2,12 @@ package platformapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
 	gcpv1 "github.com/openshift-online/gecko/platform-api/api/public/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 )
 
@@ -117,8 +119,17 @@ func (c *Client) RoleBindings() RoleBindingInterface {
 	return &roleBindingClient{restClient: c.restClient}
 }
 
+// RoleBindingPatch contains only fields supplied by the caller. A non-nil
+// empty Condition explicitly clears the restriction.
+type RoleBindingPatch struct {
+	Subject   *string        `json:"subject,omitempty"`
+	RoleRef   *gcpv1.RoleRef `json:"roleRef,omitempty"`
+	Condition *string        `json:"condition,omitempty"`
+}
+
 // RoleBindingInterface defines operations on RoleBinding resources.
 type RoleBindingInterface interface {
+	Patch(ctx context.Context, namespace, name string, patch RoleBindingPatch) (*gcpv1.RoleBinding, error)
 	Create(ctx context.Context, namespace string, roleBinding *gcpv1.RoleBinding) (*gcpv1.RoleBinding, error)
 	Get(ctx context.Context, namespace, name string) (*gcpv1.RoleBinding, error)
 	List(ctx context.Context, namespace string) (*gcpv1.RoleBindingList, error)
@@ -206,4 +217,21 @@ func (c *roleBindingClient) Delete(ctx context.Context, namespace, name string) 
 		Name(name).
 		Do(ctx)
 	return normalizeResult(response, http.MethodDelete, "rolebindings", name, false)
+}
+
+// Patch applies all supplied fields in a single JSON merge patch.
+func (c *roleBindingClient) Patch(ctx context.Context, namespace, name string, patch RoleBindingPatch) (*gcpv1.RoleBinding, error) {
+	body, err := json.Marshal(struct {
+		Spec RoleBindingPatch `json:"spec"`
+	}{Spec: patch})
+	if err != nil {
+		return nil, err
+	}
+	result := &gcpv1.RoleBinding{}
+	response := c.restClient.Patch(types.MergePatchType).MaxRetries(0).Namespace(namespace).Resource("rolebindings").Name(name).Body(body).Do(ctx)
+	if err := decodeResult(response, result, http.MethodPatch, "rolebindings", name, false); err != nil {
+		return nil, err
+	}
+	result.SetGroupVersionKind(gcpv1.GroupVersion.WithKind("RoleBinding"))
+	return result, nil
 }
