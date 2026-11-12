@@ -268,7 +268,7 @@ func TestReleaseVersion(t *testing.T) {
 	t.Run("When release version is set it should return it", func(t *testing.T) {
 		np := &gcpv1.NodePool{
 			Spec: gcpv1.NodePoolSpec{
-				Release: gcpv1.ReleaseSpec{Version: "4.22.0"},
+				Release: gcpv1.NodePoolReleaseSpec{Version: "4.22.0"},
 			},
 		}
 		if got := releaseVersion(np); got != "4.22.0" {
