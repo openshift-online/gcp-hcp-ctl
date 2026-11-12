@@ -280,7 +280,7 @@ func TestReleaseVersion(t *testing.T) {
 	t.Run("When release version is set it should return it", func(t *testing.T) {
 		c := &gcpv1.Cluster{
 			Spec: gcpv1.ClusterSpec{
-				Release: gcpv1.ReleaseSpec{Version: "4.22.0"},
+				Release: gcpv1.ClusterReleaseSpec{Version: "4.22.0"},
 			},
 		}
 		if got := releaseVersion(c); got != "4.22.0" {
