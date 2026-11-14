@@ -10,7 +10,7 @@ require (
 	github.com/openshift-online/gecko/platform-api v0.0.0-20261102151815-4226e705b068
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/text v0.44.0
