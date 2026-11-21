@@ -28,7 +28,7 @@ func newListCmd() *cobra.Command {
 			case output.FormatJSON:
 				return output.PrintJSON(out, clusterList)
 			case output.FormatYAML:
-				return output.PrintYAML(out, clusterList)
+				return output.PrintResourceYAML(out, clusterList)
 			default:
 			}
 

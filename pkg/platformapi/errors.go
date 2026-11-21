@@ -2,6 +2,7 @@ package platformapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/auth"
@@ -16,24 +17,35 @@ const maxStoredResourceNameBytes = 256
 // policy advice are deliberately omitted from normal CLI output. Request
 // metadata is available through accessors for callers that need it.
 type HTTPError struct {
-	statusCode int
-	method     string
-	resource   string
-	name       string
-	message    string
+	resourceNotFound bool
+	statusCode       int
+	method           string
+	resource         string
+	name             string
+	message          string
 }
 
 func newHTTPError(method, resource, name string, statusCode int, status *metav1.Status, body []byte) *HTTPError {
+	// client-go can synthesize a StatusError for a proxy's bare 404. Only an
+	// explicit API Status body is authoritative resource absence for cleanup.
+	var declared metav1.Status
+	authoritativeAbsent := statusCode == 404 && json.Unmarshal(body, &declared) == nil && declared.Kind == "Status" && declared.APIVersion == "v1" && declared.Status == metav1.StatusFailure && declared.Code == 404 && (declared.Reason == "" || declared.Reason == metav1.StatusReasonNotFound)
 	if len(name) > maxStoredResourceNameBytes {
 		name = name[:maxStoredResourceNameBytes]
 	}
 	return &HTTPError{
-		statusCode: statusCode,
-		method:     method,
-		resource:   resource,
-		name:       name,
-		message:    displayMessage(statusCode, status, body),
+		resourceNotFound: authoritativeAbsent,
+		statusCode:       statusCode,
+		method:           method,
+		resource:         resource,
+		name:             name,
+		message:          displayMessage(statusCode, status, body),
 	}
+}
+
+func IsResourceNotFound(err error) bool {
+	var e *HTTPError
+	return errors.As(err, &e) && e.resourceNotFound
 }
 
 func (e *HTTPError) Error() string { return e.message }

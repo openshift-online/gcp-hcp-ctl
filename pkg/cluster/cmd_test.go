@@ -280,7 +280,7 @@ func TestReleaseVersion(t *testing.T) {
 	t.Run("When release version is set it should return it", func(t *testing.T) {
 		c := &gcpv1.Cluster{
 			Spec: gcpv1.ClusterSpec{
-				Release: gcpv1.ReleaseSpec{Version: "4.22.0"},
+				Release: gcpv1.ClusterReleaseSpec{Version: "4.22.0"},
 			},
 		}
 		if got := releaseVersion(c); got != "4.22.0" {
@@ -362,6 +362,18 @@ func executeClusterTestCommand(t *testing.T, client *platformapi.Client, ctx con
 	root.SetArgs(append([]string{"cluster"}, args...))
 	err := root.Execute()
 	return err, stdout.String(), stderr.String()
+}
+
+func TestClusterGetPreservesPublicIAMRequirements(t *testing.T) {
+	client := clusterTestClient(t, http.StatusOK, `{"apiVersion":"gcp.managed.openshift.io/v1","kind":"Cluster","metadata":{"name":"wif3-first","uid":"cluster-uid","generation":2},"spec":{"release":{"version":"5.0.2"}},"status":{"iamDispatch":{"private":true},"iamRequirements":{"state":"Complete","observedGeneration":2,"objectUID":"cluster-uid","clusterUID":"cluster-uid","lastRefreshTime":"2026-11-18T12:40:00Z","dispatched":{"releaseVersion":"5.0.2","releaseImage":"quay.io/example/release@sha256:abc","channelGroup":"candidate","templateRef":{"name":"5.0.0","uid":"template-uid","digest":"sha256:abc"}}}}}`)
+	for _, format := range []string{"json", "yaml"} {
+		t.Run(format, func(t *testing.T) {
+			err, out, _ := executeClusterTestCommand(t, client, context.Background(), "get", "wif3-first", "-o", format)
+			if err != nil || !strings.Contains(out, "iamRequirements") || !strings.Contains(out, "template-uid") || strings.Contains(out, "iamDispatch") {
+				t.Fatalf("public readback lost the exact requirement or leaked private dispatch: %s (%v)", out, err)
+			}
+		})
+	}
 }
 
 func assertSafeClusterError(t *testing.T, err error, stdout, stderr, want string) {

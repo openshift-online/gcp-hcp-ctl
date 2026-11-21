@@ -7,16 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
-	"github.com/go-logr/logr"
-	"github.com/openshift-online/gcp-hcp-ctl/pkg/discovery"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/iam"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/iam/application"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/network"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/platformapi"
 	gcpv1 "github.com/openshift-online/gecko/platform-api/api/public/v1"
@@ -67,6 +65,16 @@ func generateCompliantInfraID(clusterName string) (string, error) {
 }
 
 type createOptions struct {
+	subnetCIDR        string
+	now               func() time.Time
+	infraID           string
+	stateFile         string
+	expectPlan        string
+	confirm           bool
+	resume            bool
+	maintenanceUntil  string
+	iamCloud          application.Cloud
+	networkCloud      network.OwnedCloud
 	iamConfigFile     string
 	networkConfigFile string
 	setupInfra        bool
@@ -83,22 +91,20 @@ func newCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <cluster-name>",
 		Short: "Create a cluster",
-		Long: `Create a cluster via the platform API server.
+		Long: `Create a fresh cluster using its authenticated, pinned IAM contract.
 
-Two modes of operation:
+Preview without changes:
+  gcphcpctl cluster create my-cluster --setup-infra --infra-id fresh-123 \
+    --project my-project --version 5.0.0 --dry-run
 
-  1. Config files: assemble from iam-config.json and network-config.json
-     gcphcpctl cluster create my-cluster \
-       --iam-config-file iam-config.json \
-       --network-config-file network-config.json \
-       --version 4.22.0-rc.5 --channel-group candidate
+After reviewing and authorizing the complete plan, mutation additionally requires
+--confirm --expect-plan <fingerprint> --state-file <private-path>.
+Existing operation files require --resume. An uncertain submission is resolved
+by exact identity rather than provisioning a second installation.
 
-  2. Setup infra: provision IAM and network automatically, then create cluster
-     gcphcpctl cluster create my-cluster \
-       --setup-infra --project my-project \
-       --version 4.22.0-rc.5 --channel-group candidate
-
-Both --iam-config-file and --network-config-file are required in config-file mode.`,
+Config-file mode requires both --iam-config-file and --network-config-file plus
+the owned --state-file. Files are identity hints, not fresh IAM verification;
+the configured existing network is read-only and is never adopted for cleanup.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return fmt.Errorf("cluster name is required\n\nUsage: %s", cmd.UseLine())
@@ -120,104 +126,15 @@ Both --iam-config-file and --network-config-file are required in config-file mod
 	_ = cmd.Flags().MarkHidden("channel-group")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show payload without creating")
 	cmd.Flags().StringVarP(&opts.outputFmt, "output", "o", "text", "Output format: text, json, yaml")
+	cmd.Flags().StringVar(&opts.infraID, "infra-id", "", "Stable installation ID (required for confirmed setup)")
+	cmd.Flags().StringVar(&opts.stateFile, "state-file", "", "Protected operation journal")
+	cmd.Flags().StringVar(&opts.expectPlan, "expect-plan", "", "Expected complete preview fingerprint")
+	cmd.Flags().BoolVar(&opts.confirm, "confirm", false, "Confirm the exact previewed installation")
+	cmd.Flags().BoolVar(&opts.resume, "resume", false, "Explicitly resume the same operation")
+	cmd.Flags().StringVar(&opts.maintenanceUntil, "maintenance-exclusion-until", "", "Initial automatic-upgrade exclusion expiry (RFC3339)")
+	cmd.Flags().StringVar(&opts.subnetCIDR, "vpc-cidr", network.DefaultSubnetCIDR, "Explicit IPv4 subnet CIDR for the installation plan")
 
 	return cmd
-}
-
-func (o *createOptions) run(cmd *cobra.Command, clusterName string) error {
-	if o.dryRun && o.setupInfra {
-		return fmt.Errorf("--dry-run cannot be combined with --setup-infra because setup-infra has side effects")
-	}
-
-	switch o.endpointAccess {
-	case "Private", "PublicAndPrivate":
-	default:
-		return fmt.Errorf("--endpoint-access must be one of: Private, PublicAndPrivate")
-	}
-
-	if o.version == "" {
-		return fmt.Errorf("--version is required (e.g. --version 4.22.0)")
-	}
-	if o.channelGroup == "" {
-		return fmt.Errorf("--channel-group is required")
-	}
-
-	oidcBase := regionInfoFromCmd(cmd).OIDCIssuer
-	if oidcBase == "" {
-		environment, _ := cmd.Flags().GetString("environment")
-		return discovery.EndpointRequiredError(discovery.KindOIDC, environment)
-	}
-
-	client := clientFromCmd(cmd)
-	if err := validateVersion(cmd.Context(), client.Versions(), o.version, o.channelGroup); err != nil {
-		return err
-	}
-
-	infraID, err := generateCompliantInfraID(clusterName)
-	if err != nil {
-		return fmt.Errorf("generating infra ID: %w", err)
-	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "Generated infra ID: %s\n", infraID)
-
-	project, _ := cmd.Flags().GetString("project")
-	region, _ := cmd.Flags().GetString("region")
-	if region == "" {
-		region = "us-central1"
-	}
-
-	bpo := buildPayloadOptions{
-		clusterName:    clusterName,
-		infraID:        infraID,
-		projectID:      project,
-		region:         region,
-		endpointAccess: o.endpointAccess,
-		oidcEndpoint:   oidcBase,
-		version:        o.version,
-		channelGroup:   o.channelGroup,
-	}
-
-	var cluster *gcpv1.Cluster
-
-	switch {
-	case o.iamConfigFile != "":
-		if o.networkConfigFile == "" {
-			return fmt.Errorf("--network-config-file is required with --iam-config-file")
-		}
-		cluster, err = buildPayloadFromConfigs(o.iamConfigFile, o.networkConfigFile, bpo)
-		if err != nil {
-			return err
-		}
-
-	case o.setupInfra:
-		cluster, err = buildPayloadWithInfraSetup(cmd.Context(), cmd.ErrOrStderr(), bpo)
-		if err != nil {
-			return err
-		}
-
-	default:
-		return fmt.Errorf("either --setup-infra or --iam-config-file and --network-config-file are required")
-	}
-
-	if o.dryRun {
-		out := cmd.OutOrStdout()
-		if _, err := fmt.Fprintln(out, "Dry run — would POST this payload:"); err != nil {
-			return err
-		}
-		data, err := json.MarshalIndent(cluster, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshaling payload: %w", err)
-		}
-		_, err = fmt.Fprintln(out, string(data))
-		return err
-	}
-
-	ns := platformapi.NamespaceForProject(bpo.projectID)
-	created, err := client.Clusters().Create(cmd.Context(), ns, cluster)
-	if err != nil {
-		return decorateCreateError(err, o.setupInfra)
-	}
-
-	return printCluster(cmd.OutOrStdout(), created, o.outputFmt)
 }
 
 func validateVersion(ctx context.Context, versions platformapi.VersionInterface, version, channelGroup string) error {
@@ -318,36 +235,6 @@ func networkCreateOptions(opts buildPayloadOptions) *network.CreateOptions {
 	}
 }
 
-func buildPayloadWithInfraSetup(ctx context.Context, w io.Writer, opts buildPayloadOptions) (*gcpv1.Cluster, error) {
-	if opts.projectID == "" {
-		return nil, fmt.Errorf("--project is required with --setup-infra (or set GCPHCPCTL_PROJECT or project in config)")
-	}
-	logger := logr.FromSlogHandler(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	fmt.Fprintln(w, ">>> Step 1: Setup IAM infrastructure")
-	iamOpts := &iam.CreateOptions{
-		ProjectID:     opts.projectID,
-		InfraID:       opts.infraID,
-		OIDCIssuerURL: opts.issuerURL(),
-	}
-	iamOutput, err := iamOpts.CreateIAM(ctx, logger)
-	if err != nil {
-		return nil, fmt.Errorf("IAM setup failed: %w", err)
-	}
-	fmt.Fprintf(w, "  IAM setup complete: %d service accounts created\n", len(iamOutput.ServiceAccounts))
-
-	fmt.Fprintln(w, ">>> Step 2: Setup network infrastructure")
-	networkOpts := networkCreateOptions(opts)
-	networkOutput, err := networkOpts.CreateNetwork(ctx, logger)
-	if err != nil {
-		return nil, fmt.Errorf("network setup failed: %w", err)
-	}
-	fmt.Fprintf(w, "  Network setup complete: VPC=%s, Subnet=%s\n", networkOutput.NetworkName, networkOutput.SubnetName)
-
-	fmt.Fprintln(w, ">>> Step 3: Building cluster payload")
-	return assemblePayload(iamOutput, networkOutput, opts)
-}
-
 func validatePayloadInputs(projectID, region string, iamOutput *iam.CreateOutput, netOutput *network.CreateOutput) error {
 	if projectID == "" {
 		return fmt.Errorf("IAM config missing required field: projectId")
@@ -420,7 +307,7 @@ func assemblePayload(iamOutput *iam.CreateOutput, netOutput *network.CreateOutpu
 					},
 				},
 			},
-			Release: gcpv1.ReleaseSpec{
+			Release: gcpv1.ClusterReleaseSpec{
 				Version:      opts.version,
 				ChannelGroup: opts.channelGroup,
 			},

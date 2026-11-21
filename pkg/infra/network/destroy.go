@@ -106,6 +106,9 @@ func (o *DestroyOptions) DestroyNetwork(ctx context.Context, logger logr.Logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize network manager: %w", err)
 	}
+	if err := guardLegacyDestruction(ctx, mgr.client, o.InfraID); err != nil {
+		return err
+	}
 
 	if err := mgr.DeleteNAT(ctx); err != nil {
 		return fmt.Errorf("failed to delete Cloud NAT: %w", err)

@@ -30,7 +30,9 @@ with IAM role bindings.`,
 	}
 
 	iamCmd.AddCommand(NewCreateCommand(effective))
-	iamCmd.AddCommand(NewDestroyCommand())
+	iamCmd.AddCommand(NewDestroyCommand(effective))
+	iamCmd.AddCommand(newVerifyCommand(effective))
+	iamCmd.AddCommand(newUpdateCommand(effective))
 
 	return iamCmd
 }

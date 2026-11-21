@@ -96,7 +96,7 @@ func printCluster(w io.Writer, c *gcpv1.Cluster, format string) error {
 	case output.FormatJSON:
 		return output.PrintJSON(w, c)
 	case output.FormatYAML:
-		return output.PrintYAML(w, c)
+		return output.PrintResourceYAML(w, c)
 	default:
 	}
 

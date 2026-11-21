@@ -2,6 +2,13 @@
 
 CLI for managing GCP Hosted Control Plane (HCP) clusters.
 
+**Code-first development candidate:** catalog-driven IAM/Cluster creation now
+requires pinned contracts, reviewed preview fingerprints and protected operation
+state. This branch needs an explicit compatible external Go workspace until the
+new API modules are published; the unqualified build below is not yet a standalone
+release path. Read [the IAM workflow and safety boundary](docs/WIFCONFIGTEMPLATE.md)
+before using creation/cleanup commands. No live allocation is approved by examples.
+
 Part of the [GCP HCP](https://github.com/openshift-online/gcp-hcp) project. See [design decisions](https://github.com/openshift-online/gcp-hcp/tree/main/design-decisions) for architectural context.
 
 ## Quick Start
