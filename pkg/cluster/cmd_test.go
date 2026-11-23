@@ -411,20 +411,19 @@ func TestPrintClusterVersionLabels(t *testing.T) {
 	}{
 		{
 			name:    "creating",
-			want:    []string{"Version:         4.23.0-ec.1 (candidate)"},
-			notWant: []string{"Target Version:"},
+			want:    []string{"Target Version:  4.23.0-ec.1 (candidate)"},
+			notWant: []string{"Current Version:"},
 		},
 		{
 			name:    "upgrading",
 			current: "4.22.14",
-			want:    []string{"Version:         4.22.14 (candidate)", "Target Version:  4.23.0-ec.1 (candidate)"},
-			notWant: []string{"Version:         4.23.0-ec.1"},
+			want:    []string{"Current Version: 4.22.14", "Target Version:  4.23.0-ec.1 (candidate)"},
+			notWant: []string{"Current Version: 4.23.0-ec.1"},
 		},
 		{
 			name:    "completed",
 			current: "4.23.0-ec.1",
-			want:    []string{"Version:         4.23.0-ec.1 (candidate)"},
-			notWant: []string{"Target Version:"},
+			want:    []string{"Current Version: 4.23.0-ec.1", "Target Version:  4.23.0-ec.1 (candidate)"},
 		},
 	}
 	for _, tt := range tests {

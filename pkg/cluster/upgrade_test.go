@@ -28,6 +28,7 @@ func TestUpgradeControlPlanePatchesCluster(t *testing.T) {
 	for _, version := range []string{"4.23", "4.23.9", "5.0.0-ec.6"} {
 		for _, format := range []string{"text", "json", "yaml"} {
 			t.Run(version+"/"+format, func(t *testing.T) {
+				const ingressEmail = "ingress@example-project.iam.gserviceaccount.com"
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if r.Method != http.MethodPatch || r.URL.Path != "/apis/gcp.managed.openshift.io/v1/namespaces/customer-project/clusters/test-cluster" {
 						t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -47,6 +48,10 @@ func TestUpgradeControlPlanePatchesCluster(t *testing.T) {
 					}
 					cluster := &gcpv1.Cluster{TypeMeta: metav1.TypeMeta{APIVersion: gcpv1.GroupVersion.String(), Kind: "Cluster"}, ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"}}
 					cluster.Spec.Release.Version = version
+					email := ingressEmail
+					cluster.Spec.Platform.GCP = &gcpv1.GCPClusterPlatform{
+						WorkloadIdentity: gcpv1.WorkloadIdentitySpec{ServiceAccountsRef: &gcpv1.ServiceAccountsRef{IngressEmail: &email}},
+					}
 					cluster.Status.HostedClusterResult = &gcpv1.HostedClusterResult{Version: "4.22.19"}
 					w.Header().Set("Content-Type", "application/json")
 					if err := json.NewEncoder(w).Encode(cluster); err != nil {
@@ -72,6 +77,9 @@ func TestUpgradeControlPlanePatchesCluster(t *testing.T) {
 				}
 				if format == "text" && strings.Contains(out.String(), "started") {
 					t.Fatal("saving desired configuration must not claim rollout started")
+				}
+				if format != "text" && !strings.Contains(out.String(), ingressEmail) {
+					t.Fatalf("structured output lost ingressEmail: %s", out.String())
 				}
 			})
 		}

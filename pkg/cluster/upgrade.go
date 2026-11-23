@@ -27,7 +27,7 @@ func newUpgradeControlPlaneCmd() *cobra.Command {
 		Long: `Set the Cluster's desired release. A major.minor value selects the latest
 eligible patch in the selected channel; an exact semantic version is also accepted.
 The target may wait for health or rollout capacity before the server approves it.
-Use cluster get to see the observed Version, pending Target Version, and conditions.`,
+Use cluster get to see the observed Current Version, desired Target Version, and conditions.`,
 		Args: cobra.ExactArgs(1),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`).MatchString(version) {
