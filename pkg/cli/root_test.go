@@ -29,6 +29,17 @@ func childCommand(t *testing.T, parent *cobra.Command, name string) *cobra.Comma
 	return nil
 }
 
+func TestWIFConfigTemplateCommandsRegistered(t *testing.T) {
+	group := childCommand(t, newRootCmd(), "wifconfigtemplate")
+	childCommand(t, group, "list")
+	childCommand(t, group, "get")
+	for _, child := range group.Commands() {
+		if child.Name() != "get" && child.Name() != "list" {
+			t.Errorf("unexpected template command %q", child.Name())
+		}
+	}
+}
+
 func TestConfigCommandUsesFreshState(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(configPath, []byte("project: file-project\nregion: us-central1\noutput: json\n"), 0600); err != nil {

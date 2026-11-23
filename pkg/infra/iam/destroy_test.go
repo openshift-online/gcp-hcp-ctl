@@ -122,7 +122,13 @@ func TestNewIAMCmd(t *testing.T) {
 		t.Errorf("expected Use to be %q, got %q", "iam", cmd.Use)
 	}
 
-	if len(cmd.Commands()) != 2 {
-		t.Errorf("expected 2 subcommands, got %d", len(cmd.Commands()))
+	if len(cmd.Commands()) != 4 {
+		t.Errorf("expected create/destroy/verify/update subcommands, got %d", len(cmd.Commands()))
+	}
+	if cmd.Commands()[0].Parent() != cmd {
+		t.Fatal("IAM subcommands are not registered under iam")
+	}
+	if update, _, err := cmd.Find([]string{"update"}); err != nil || update == nil || update.Name() != "update" {
+		t.Fatalf("read-only update preview command not registered: %v", err)
 	}
 }

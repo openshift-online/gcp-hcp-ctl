@@ -4,11 +4,12 @@ package iam
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/api/cloudresourcemanager/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iam/v1"
 	"google.golang.org/api/option"
 )
@@ -19,24 +20,39 @@ const (
 )
 
 func wrapAuthError(action string, err error) error {
-	msg := err.Error()
-	switch {
-	case strings.Contains(msg, "could not find default credentials"):
-		return fmt.Errorf("%s: no GCP credentials found\n\n"+
-			"  Run: gcloud auth application-default login\n"+
-			"  Or set GOOGLE_APPLICATION_CREDENTIALS to a service account key file", action)
-	case strings.Contains(msg, "token expired") || strings.Contains(msg, "oauth2: token expired"):
-		return fmt.Errorf("%s: GCP credentials have expired\n\n"+
-			"  Run: gcloud auth application-default login", action)
-	case strings.Contains(msg, "PermissionDenied") || strings.Contains(msg, "permission denied") || strings.Contains(msg, "403"):
-		return fmt.Errorf("%s: permission denied\n\n"+
-			"  %v\n\n"+
-			"  Ensure your account has IAM Admin and Project IAM Admin roles.\n"+
-			"  Verify the IAM API is enabled: gcloud services enable iam.googleapis.com --project <project>", action, err)
-	default:
-		return fmt.Errorf("%s: %w", action, err)
-	}
+	return &RequestError{Action: action, Cause: err}
 }
+
+type RequestError struct {
+	Action string
+	Cause  error
+}
+
+func (e *RequestError) Error() string {
+	label := "cloud request failed"
+	var api *googleapi.Error
+	if errors.As(e.Cause, &api) {
+		switch api.Code {
+		case 401:
+			label = "cloud authentication required"
+		case 403:
+			label = "cloud access denied"
+		case 404:
+			label = "cloud resource not found"
+		case 409, 412:
+			label = "cloud state conflict"
+		case 429:
+			label = "cloud request throttled"
+		}
+	}
+	return e.Action + ": " + label
+}
+func (e *RequestError) Unwrap() error { return e.Cause }
+
+type OperationFailure struct{ Code int64 }
+
+func (e *OperationFailure) Error() string    { return "cloud operation completed with failure" }
+func (e *OperationFailure) Definitive() bool { return true }
 
 // Client wraps the GCP IAM and Cloud Resource Manager APIs.
 type Client struct {
@@ -46,12 +62,13 @@ type Client struct {
 }
 
 // NewClient creates a new IAM client using Application Default Credentials.
-func NewClient(ctx context.Context, projectID string) (*Client, error) {
-	iamService, err := iam.NewService(ctx, option.WithScopes(iam.CloudPlatformScope))
+func NewClient(ctx context.Context, projectID string, opts ...option.ClientOption) (*Client, error) {
+	opts = append([]option.ClientOption{option.WithScopes(iam.CloudPlatformScope)}, opts...)
+	iamService, err := iam.NewService(ctx, opts...)
 	if err != nil {
 		return nil, wrapAuthError("creating IAM client", err)
 	}
-	crmService, err := cloudresourcemanager.NewService(ctx, option.WithScopes(cloudresourcemanager.CloudPlatformScope))
+	crmService, err := cloudresourcemanager.NewService(ctx, opts...)
 	if err != nil {
 		return nil, wrapAuthError("creating Cloud Resource Manager client", err)
 	}
@@ -77,7 +94,7 @@ func (c *Client) GetProjectNumber(ctx context.Context) (int64, error) {
 
 // GetProjectIAMPolicy retrieves the IAM policy for the configured project.
 func (c *Client) GetProjectIAMPolicy(ctx context.Context) (*cloudresourcemanager.Policy, error) {
-	policy, err := c.crmService.Projects.GetIamPolicy(c.ProjectID, &cloudresourcemanager.GetIamPolicyRequest{}).Context(ctx).Do()
+	policy, err := c.crmService.Projects.GetIamPolicy(c.ProjectID, &cloudresourcemanager.GetIamPolicyRequest{Options: &cloudresourcemanager.GetPolicyOptions{RequestedPolicyVersion: 3}}).Context(ctx).Do()
 	if err != nil {
 		return nil, wrapAuthError("getting project IAM policy", err)
 	}
@@ -221,7 +238,7 @@ func (c *Client) DeleteServiceAccount(ctx context.Context, resource string) erro
 
 // GetServiceAccountIAMPolicy retrieves the IAM policy for a service account.
 func (c *Client) GetServiceAccountIAMPolicy(ctx context.Context, resource string) (*iam.Policy, error) {
-	return c.iamService.Projects.ServiceAccounts.GetIamPolicy(resource).Context(ctx).Do()
+	return c.iamService.Projects.ServiceAccounts.GetIamPolicy(resource).OptionsRequestedPolicyVersion(3).Context(ctx).Do()
 }
 
 // SetServiceAccountIAMPolicy sets the IAM policy for a service account.
@@ -315,7 +332,7 @@ func (c *Client) AddServiceAccountIAMRoles(ctx context.Context, resource, member
 // Returns true if the member was added, false if it already existed.
 func AddProjectPolicyMember(policy *cloudresourcemanager.Policy, role, member string) bool {
 	for _, binding := range policy.Bindings {
-		if binding.Role == role {
+		if binding.Role == role && binding.Condition == nil {
 			for _, existing := range binding.Members {
 				if existing == member {
 					return false
@@ -336,7 +353,7 @@ func AddProjectPolicyMember(policy *cloudresourcemanager.Policy, role, member st
 // Returns true if the member was removed, false if it was not found.
 func RemoveProjectPolicyMember(policy *cloudresourcemanager.Policy, role, member string) bool {
 	for _, binding := range policy.Bindings {
-		if binding.Role == role {
+		if binding.Role == role && binding.Condition == nil {
 			for i, existing := range binding.Members {
 				if existing == member {
 					binding.Members[i] = binding.Members[len(binding.Members)-1]
@@ -353,7 +370,7 @@ func RemoveProjectPolicyMember(policy *cloudresourcemanager.Policy, role, member
 // Returns true if the member was added, false if it already existed.
 func AddServiceAccountPolicyMember(policy *iam.Policy, role, member string) bool {
 	for _, binding := range policy.Bindings {
-		if binding.Role == role {
+		if binding.Role == role && binding.Condition == nil {
 			for _, existing := range binding.Members {
 				if existing == member {
 					return false
@@ -389,7 +406,7 @@ func (c *Client) waitOperation(ctx context.Context, opName string) error {
 		}
 		if op.Done {
 			if op.Error != nil {
-				return fmt.Errorf("operation error: %v", op.Error)
+				return &OperationFailure{Code: op.Error.Code}
 			}
 			return nil
 		}

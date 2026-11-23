@@ -18,6 +18,7 @@ import (
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/role"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/rolebinding"
 	versions "github.com/openshift-online/gcp-hcp-ctl/pkg/version"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/wifconfigtemplate"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -79,6 +80,7 @@ Configuration priority: CLI flags > environment variables > config file (~/.gcph
 		nodepool.NewNodePoolCmd(cfg),
 		regions.NewRegionsCmd(),
 		versions.NewVersionCmd(),
+		wifconfigtemplate.NewWIFConfigTemplateCmd(),
 		newVersionCmd(),
 		newCompletionCmd(root),
 	)

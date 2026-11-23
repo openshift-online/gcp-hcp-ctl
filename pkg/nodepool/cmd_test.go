@@ -268,7 +268,7 @@ func TestReleaseVersion(t *testing.T) {
 	t.Run("When release version is set it should return it", func(t *testing.T) {
 		np := &gcpv1.NodePool{
 			Spec: gcpv1.NodePoolSpec{
-				Release: gcpv1.ReleaseSpec{Version: "4.22.0"},
+				Release: gcpv1.NodePoolReleaseSpec{Version: "4.22.0"},
 			},
 		}
 		if got := releaseVersion(np); got != "4.22.0" {
@@ -460,6 +460,18 @@ func executeNodepoolError(t *testing.T, code int, body string, args ...string) (
 	root.SetArgs(append([]string{"nodepool"}, args...))
 	err = root.Execute()
 	return err, stdout.String(), stderr.String()
+}
+
+func TestNodePoolGetPreservesPublicIAMRequirements(t *testing.T) {
+	body := `{"apiVersion":"gcp.managed.openshift.io/v1","kind":"NodePool","metadata":{"name":"workers","uid":"pool-uid","generation":1},"status":{"iamDispatch":{"private":true},"iamRequirements":{"state":"Incomplete","observedGeneration":1,"objectUID":"pool-uid","clusterUID":"cluster-uid","pending":{"releaseVersion":"5.0.3","releaseImage":"quay.io/example/release@sha256:abc","channelGroup":"candidate","templateRef":{"name":"5.0.3","uid":"target-template-uid","digest":"sha256:abc"}}}}}`
+	for _, format := range []string{"json", "yaml"} {
+		t.Run(format, func(t *testing.T) {
+			err, out, _ := executeNodepoolError(t, http.StatusOK, body, "get", "workers", "-o", format)
+			if err != nil || !strings.Contains(out, "iamRequirements") || !strings.Contains(out, "target-template-uid") || strings.Contains(out, "iamDispatch") {
+				t.Fatalf("public readback lost pending IAM requirement or leaked private dispatch: %s (%v)", out, err)
+			}
+		})
+	}
 }
 
 func TestNodepoolCommandErrorBoundary(t *testing.T) {

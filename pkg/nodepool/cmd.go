@@ -116,7 +116,7 @@ func printNodePool(w io.Writer, np *gcpv1.NodePool, format string) error {
 	case output.FormatJSON:
 		return output.PrintJSON(w, np)
 	case output.FormatYAML:
-		return output.PrintYAML(w, np)
+		return output.PrintResourceYAML(w, np)
 	default:
 	}
 

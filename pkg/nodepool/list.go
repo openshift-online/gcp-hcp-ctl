@@ -36,7 +36,7 @@ func newListCmd() *cobra.Command {
 			case output.FormatJSON:
 				return output.PrintJSON(out, allNodePools)
 			case output.FormatYAML:
-				return output.PrintYAML(out, allNodePools)
+				return output.PrintResourceYAML(out, allNodePools)
 			default:
 			}
 

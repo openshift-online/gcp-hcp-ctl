@@ -1,5 +1,8 @@
 package iam
 
+// Historical fixtures only. None of the old embedded roles, adoption, undelete,
+// trust repair or name-only deletion code is linked into the production CLI.
+
 import (
 	"context"
 	_ "embed"
@@ -16,7 +19,7 @@ import (
 	iamapi "google.golang.org/api/iam/v1"
 )
 
-//go:embed iam-bindings.json
+//go:embed testdata/legacy-iam-bindings.json
 var defaultServiceAccountsJSON []byte
 
 const (

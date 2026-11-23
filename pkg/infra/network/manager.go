@@ -65,7 +65,14 @@ func (m *Manager) CreateNetwork(ctx context.Context) (*compute.Network, error) {
 	if err := m.client.InsertNetwork(ctx, network); err != nil {
 		if isAlreadyExistsError(err) {
 			m.logger.Info("VPC network already exists", "name", networkName)
-			return m.client.GetNetwork(ctx, networkName)
+			existing, getErr := m.client.GetNetwork(ctx, networkName)
+			if getErr != nil {
+				return nil, getErr
+			}
+			if journalOwned(existing.Description) {
+				return nil, fmt.Errorf("journal-managed installation cannot be adopted by legacy network setup")
+			}
+			return existing, nil
 		}
 		return nil, fmt.Errorf("failed to create VPC network: %w", err)
 	}

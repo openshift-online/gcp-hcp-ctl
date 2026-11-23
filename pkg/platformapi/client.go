@@ -36,6 +36,7 @@ func init() {
 // The project (GCP project ID) is stored once at construction and used as
 // the Kubernetes namespace for all scoped operations.
 type Client struct {
+	endpoint   string
 	restClient rest.Interface
 	project    string
 }
@@ -72,7 +73,7 @@ func newClient(apiEndpoint, project string, tokenSource *auth.TokenSource) (*Cli
 		return nil, fmt.Errorf("creating REST client: invalid API endpoint configuration")
 	}
 
-	return &Client{restClient: rc, project: project}, nil
+	return &Client{restClient: rc, project: project, endpoint: apiEndpoint}, nil
 }
 
 func clientRESTConfig(endpoint string) *rest.Config {
@@ -106,7 +107,7 @@ func NewClientForTest(rawURL, project string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating REST client: %w", err)
 	}
-	return &Client{restClient: rc, project: project}, nil
+	return &Client{restClient: rc, project: project, endpoint: rawURL}, nil
 }
 
 // tokenTransport injects an Authorization header using the auth.TokenSource.

@@ -3,18 +3,33 @@ package iam
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/auth"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/config"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/discovery"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/infra/iam/application"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/platformapi"
+	v1 "github.com/openshift-online/gecko/platform-api/api/public/v1"
 	"github.com/spf13/cobra"
 )
 
 type CreateOptions struct {
+	StopAfterFirstRole  bool
+	Version             string
+	ChannelGroup        string
+	DryRun              bool
+	Confirm             bool
+	Resume              bool
+	StateFile           string
+	ExpectPlan          string
+	Catalog             application.Catalog
+	Cloud               application.Cloud
 	ProjectID           string
 	InfraID             string
 	ClusterOIDCJWKSFile string
@@ -23,11 +38,15 @@ type CreateOptions struct {
 }
 
 type CreateOutput struct {
-	ProjectID            string                 `json:"projectId"`
-	ProjectNumber        string                 `json:"projectNumber"`
-	InfraID              string                 `json:"infraId"`
-	WorkloadIdentityPool WorkloadIdentityConfig `json:"workloadIdentityPool"`
-	ServiceAccounts      map[string]string      `json:"serviceAccounts"`
+	SchemaVersion        int                            `json:"schemaVersion,omitempty"`
+	TemplateRef          *v1.WIFConfigTemplateReference `json:"templateRef,omitempty"`
+	WorkerServiceAccount string                         `json:"workerServiceAccount,omitempty"`
+	OperationID          string                         `json:"operationID,omitempty"`
+	ProjectID            string                         `json:"projectId"`
+	ProjectNumber        string                         `json:"projectNumber"`
+	InfraID              string                         `json:"infraId"`
+	WorkloadIdentityPool WorkloadIdentityConfig         `json:"workloadIdentityPool"`
+	ServiceAccounts      map[string]string              `json:"serviceAccounts"`
 }
 
 type WorkloadIdentityConfig struct {
@@ -40,7 +59,7 @@ type WorkloadIdentityConfig struct {
 // complete --oidc-issuer-url or an --oidc-jwks-file, the OIDC issuer is derived
 // from effective: discovered from --env/--region, or an explicit endpoint.
 func NewCreateCommand(effective *config.Config) *cobra.Command {
-	opts := &CreateOptions{}
+	opts := &CreateOptions{ChannelGroup: "stable"}
 
 	cmd := &cobra.Command{
 		Use:   "create <infra-id>",
@@ -50,39 +69,95 @@ func NewCreateCommand(effective *config.Config) *cobra.Command {
   - OIDC Provider
   - 6 Google Service Accounts with IAM roles and WIF bindings
 
-All operations are idempotent and safe to run multiple times.`,
+Uses the authenticated release catalog, owned operation state and fresh cloud
+readback. Preview first with --dry-run; mutation requires --confirm,
+--expect-plan and --state-file. Legacy name-only adoption is not supported.`,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			opts.InfraID = args[0]
 			opts.ProjectID, _ = cmd.Flags().GetString("project")
-
-			// Derive the issuer URL from the OIDC endpoint only when the caller
-			// hasn't supplied a complete issuer URL or a JWKS file. The endpoint is
-			// discovered from --env/--region, or taken from an explicit flag,
-			// environment variable, or config value.
-			if opts.OIDCIssuerURL == "" && opts.ClusterOIDCJWKSFile == "" {
-				info, err := discovery.NewResolver().Region(cmd.Context(), effective)
-				if err != nil {
-					return err
-				}
-				if info.OIDCIssuer == "" {
-					return discovery.EndpointRequiredError(discovery.KindOIDC, effective.Environment)
-				}
-				opts.OIDCIssuerURL = fmt.Sprintf("%s/%s", strings.TrimRight(info.OIDCIssuer, "/"), opts.InfraID)
+			if opts.ClusterOIDCJWKSFile != "" {
+				return fmt.Errorf("inline JWKS is not supported by the pinned installation flow")
 			}
+			if opts.Version == "" {
+				return fmt.Errorf("an exact --version is required")
+			}
+			info, err := discovery.NewResolver().Region(cmd.Context(), effective)
+			if err != nil {
+				return err
+			}
+			if info.PlatformAPIEndpoint == "" {
+				return discovery.EndpointRequiredError(discovery.KindAPI, effective.Environment)
+			}
+			expectedIssuer := strings.TrimRight(info.OIDCIssuer, "/") + "/" + opts.InfraID
+			if opts.OIDCIssuerURL == "" {
+				opts.OIDCIssuerURL = expectedIssuer
+			}
+			if info.OIDCIssuer == "" || opts.OIDCIssuerURL != expectedIssuer {
+				return fmt.Errorf("issuer must match the selected region and installation identity")
+			}
+			client, err := platformapi.NewClient(info.PlatformAPIEndpoint, opts.ProjectID, auth.NewTokenSource(auth.PlatformAPIAudience))
+			if err != nil {
+				return err
+			}
+			opts.Catalog = client
 
 			return opts.ValidateInputs()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.DryRun {
+				p, cloud, err := opts.Prepare(cmd.Context())
+				if err != nil {
+					return err
+				}
+				var state *application.Journal
+				if opts.Resume {
+					state, err = application.Load(opts.StateFile)
+					if err != nil {
+						return err
+					}
+				}
+				if err := (&application.Engine{Cloud: cloud}).Inspect(cmd.Context(), p, state); err != nil {
+					return err
+				}
+				executable := p.Target.Eligible() == nil
+				authorityBlock := ""
+				if authority, ok := cloud.(interface{ CheckWriterAuthority(context.Context) error }); ok {
+					if err := authority.CheckWriterAuthority(cmd.Context()); err != nil {
+						executable = false
+						authorityBlock = err.Error()
+					}
+				}
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"executable": executable, "authorityBlock": authorityBlock, "planFingerprint": p.Fingerprint(), "plan": p, "stopAfterFirstRole": opts.StopAfterFirstRole})
+			}
 			logger := logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-			return opts.Run(cmd.Context(), logger)
+			result, err := opts.CreateIAM(cmd.Context(), logger)
+			if err != nil {
+				if errors.Is(err, application.ErrControlledStop) {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"paused": true, "iamVerified": false, "stoppedAfter": "first-unbound-role", "stateFile": opts.StateFile})
+				}
+				return err
+			}
+			if opts.OutputFile != "" {
+				return opts.writeOutput(result, logger)
+			}
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 		},
 	}
 
 	cmd.Flags().StringVar(&opts.ClusterOIDCJWKSFile, "oidc-jwks-file", "", "Path to a local JSON file containing OIDC provider's public key in JWKS format")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", "", "Path to output JSON file with GSA details (default: stdout)")
 	cmd.Flags().StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", "", "OIDC issuer URL for WIF provider (defaults to the discovered OIDC endpoint + /{infra-id})")
+	cmd.Flags().StringVar(&opts.Version, "version", "", "Exact release whose retained IAM contract is required")
+	cmd.Flags().StringVar(&opts.ChannelGroup, "channel-group", "stable", "Release channel group")
+	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "Read-only IAM plan; does not create state or cloud resources")
+	cmd.Flags().BoolVar(&opts.Confirm, "confirm", false, "Confirm applying the exact previewed plan")
+	cmd.Flags().BoolVar(&opts.Resume, "resume", false, "Resume the same journaled operation")
+	cmd.Flags().StringVar(&opts.StateFile, "state-file", "", "Protected operation journal path")
+	cmd.Flags().StringVar(&opts.ExpectPlan, "expect-plan", "", "Expected fresh preview fingerprint")
+	cmd.Flags().BoolVar(&opts.StopAfterFirstRole, "stop-after-first-role", false, "Pause after one verified unbound custom role for owned cleanup rehearsal; emits no IAM success config")
+	_ = cmd.Flags().MarkDeprecated("oidc-jwks-file", "inline JWKS is unsupported; use the selected regional issuer")
 
 	return cmd
 }
@@ -116,58 +191,61 @@ func (o *CreateOptions) Run(ctx context.Context, logger logr.Logger) error {
 }
 
 func (o *CreateOptions) CreateIAM(ctx context.Context, logger logr.Logger) (*CreateOutput, error) {
-	iamManager, err := NewManager(ctx, o.ProjectID, o.InfraID, o.ClusterOIDCJWKSFile, logger)
+	if !o.Confirm || o.DryRun {
+		return nil, fmt.Errorf("IAM mutation requires --confirm and a matching --expect-plan")
+	}
+	p, cloud, err := o.Prepare(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize GCP clients: %w", err)
+		return nil, err
 	}
-
-	if o.OIDCIssuerURL != "" {
-		iamManager.SetOIDCIssuerURL(o.OIDCIssuerURL)
-	}
-
-	projectNumber, err := iamManager.GetProjectNumber(ctx)
+	session, err := application.Start(ctx, o.Catalog, cloud, p, o.StateFile, o.ExpectPlan, o.Resume)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate project: %w", err)
+		return nil, err
 	}
-
-	results := &CreateOutput{
-		ProjectID:     o.ProjectID,
-		ProjectNumber: projectNumber,
-		InfraID:       o.InfraID,
+	defer session.Close()
+	session.Engine.StopAfterFirstRole = o.StopAfterFirstRole
+	if err := session.Apply(ctx); err != nil {
+		return nil, err
 	}
-
-	poolID, err := iamManager.CreateWorkloadIdentityPool(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Workload Identity Pool: %w", err)
+	if err := session.Verify(ctx); err != nil {
+		return nil, err
 	}
+	return Output(session), nil
+}
 
-	providerID, providerAudience, err := iamManager.CreateOIDCProvider(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OIDC Provider: %w", err)
+func (o *CreateOptions) Prepare(ctx context.Context) (*application.Plan, application.Cloud, error) {
+	if o.Version == "" || o.Catalog == nil {
+		return nil, nil, fmt.Errorf("an authenticated catalog and exact --version are required; legacy IAM provisioning is disabled")
 	}
-
-	serviceAccountEmails, err := iamManager.CreateServiceAccounts(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create service accounts: %w", err)
+	if o.ClusterOIDCJWKSFile != "" {
+		return nil, nil, fmt.Errorf("inline JWKS is not supported by the pinned installation flow")
 	}
-
-	results.WorkloadIdentityPool = WorkloadIdentityConfig{
-		PoolID:     poolID,
-		ProviderID: providerID,
-		Audience:   providerAudience,
+	cloud := o.Cloud
+	if cloud == nil {
+		c, err := application.NewGCP(ctx, o.ProjectID)
+		if err != nil {
+			return nil, nil, err
+		}
+		cloud = c
 	}
-	results.ServiceAccounts = serviceAccountEmails
+	p, err := application.Prepare(ctx, o.Catalog, cloud, o.ProjectID, o.InfraID, o.OIDCIssuerURL, o.Version, o.ChannelGroup)
+	return p, cloud, err
+}
 
-	logger.Info("Created GCP IAM infrastructure", "infraID", o.InfraID, "projectID", o.ProjectID, "serviceAccountsCreated", len(serviceAccountEmails))
-
-	return results, nil
+func Output(s *application.Session) *CreateOutput {
+	j := s.File.Journal
+	p := &j.Plan
+	ref := p.Target.Reference
+	pool := p.Identity.InfraID + "-wi-pool"
+	provider := p.Identity.InfraID + "-k8s-provider"
+	return &CreateOutput{SchemaVersion: 1, ProjectID: p.Identity.Project, ProjectNumber: p.Identity.ProjectNumber, InfraID: p.Identity.InfraID, TemplateRef: &ref, WorkerServiceAccount: p.Identity.WorkerEmail, OperationID: j.OperationID, ServiceAccounts: p.Accounts(), WorkloadIdentityPool: WorkloadIdentityConfig{PoolID: pool, ProviderID: provider, Audience: "//iam.googleapis.com/projects/" + p.Identity.ProjectNumber + "/locations/global/workloadIdentityPools/" + pool + "/providers/" + provider}}
 }
 
 func (o *CreateOptions) writeOutput(results *CreateOutput, logger logr.Logger) error {
 	out := os.Stdout
 	if len(o.OutputFile) > 0 {
 		var err error
-		out, err = os.Create(o.OutputFile)
+		out, err = os.OpenFile(o.OutputFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if err != nil {
 			return fmt.Errorf("cannot create output file: %w", err)
 		}

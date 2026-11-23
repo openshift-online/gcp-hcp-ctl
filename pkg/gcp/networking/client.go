@@ -208,7 +208,7 @@ func (c *Client) waitGlobalOperation(ctx context.Context, opName string) error {
 		}
 		if op.Status == "DONE" {
 			if op.Error != nil {
-				return fmt.Errorf("operation failed: %s", formatOperationErrors(op.Error.Errors))
+				return &OperationFailure{}
 			}
 			return nil
 		}
@@ -230,7 +230,7 @@ func (c *Client) waitRegionOperation(ctx context.Context, opName string) error {
 		}
 		if op.Status == "DONE" {
 			if op.Error != nil {
-				return fmt.Errorf("operation failed: %s", formatOperationErrors(op.Error.Errors))
+				return &OperationFailure{}
 			}
 			return nil
 		}
