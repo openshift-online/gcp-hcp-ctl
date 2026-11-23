@@ -53,7 +53,10 @@ Use cluster get to see the observed Version, pending Target Version, and conditi
 	}
 	cmd.Flags().StringVar(&version, "version", "", "Desired major.minor or exact version (required)")
 	cmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text, json, yaml")
-	_ = cmd.MarkFlagRequired("version")
+	if err := cmd.MarkFlagRequired("version"); err != nil {
+		// The flag is registered above; a missing flag is a programming error.
+		panic(fmt.Errorf("marking upgrade version flag required: %w", err))
+	}
 	return cmd
 }
 
