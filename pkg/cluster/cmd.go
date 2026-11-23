@@ -329,3 +329,11 @@ func displayVersion(c *gcpv1.Cluster) string {
 	}
 	return c.Spec.Release.Version
 }
+
+// targetVersion returns pending release intent when it differs from the observed version.
+func targetVersion(c *gcpv1.Cluster) string {
+	if hcr := c.Status.HostedClusterResult; hcr != nil && hcr.Version != "" && hcr.Version != c.Spec.Release.Version {
+		return c.Spec.Release.Version
+	}
+	return ""
+}

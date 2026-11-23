@@ -102,6 +102,8 @@ rollout when its checks permit it. Saving the desired release does not mean
 rollout has started. `cluster get` shows the observed **Version** and a differing
 **Target Version** while the target is pending or being applied. The upgrade
 command also supports `-o json` and `-o yaml` to return the updated Cluster.
+Text lists add a **TARGET VERSION** column when any listed cluster has a pending
+target; the **VERSION** column continues to show the observed release.
 
 ### Nodepool Management (`nodepool`)
 

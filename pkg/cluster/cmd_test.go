@@ -3,6 +3,7 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -448,6 +449,83 @@ func TestPrintClusterVersionLabels(t *testing.T) {
 			for _, notWant := range tt.notWant {
 				if strings.Contains(buf.String(), notWant) {
 					t.Errorf("cluster output unexpectedly contains %q:\n%s", notWant, buf.String())
+				}
+			}
+		})
+	}
+}
+
+func TestListClusterVersions(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		versions   [][2]string // observed and desired versions
+		wantRows   [][]string  // version and optional target columns
+		wantTarget bool
+	}{
+		{
+			name:     "completed",
+			versions: [][2]string{{"4.23.9", "4.23.9"}},
+			wantRows: [][]string{{"4.23.9"}},
+		},
+		{
+			name:     "creating",
+			versions: [][2]string{{"", "4.23.9"}},
+			wantRows: [][]string{{"4.23.9"}},
+		},
+		{
+			name:       "pending minor",
+			versions:   [][2]string{{"4.22.19", "4.23"}},
+			wantRows:   [][]string{{"4.22.19", "4.23"}},
+			wantTarget: true,
+		},
+		{
+			name:       "mixed",
+			versions:   [][2]string{{"4.23.9", "4.23.9"}, {"4.22.19", "4.23.9"}, {"", "4.23.9"}},
+			wantRows:   [][]string{{"4.23.9", "<none>"}, {"4.22.19", "4.23.9"}, {"4.23.9", "<none>"}},
+			wantTarget: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			list := gcpv1.ClusterList{TypeMeta: metav1.TypeMeta{APIVersion: gcpv1.GroupVersion.String(), Kind: "ClusterList"}}
+			for i, versions := range tt.versions {
+				c := gcpv1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("cluster-%d", i), Namespace: "my-project"},
+					Spec: gcpv1.ClusterSpec{
+						InfraID:  "infra",
+						Release:  gcpv1.ClusterReleaseSpec{Version: versions[1]},
+						Platform: gcpv1.ClusterPlatformSpec{GCP: &gcpv1.GCPClusterPlatform{Region: "us-central1", EndpointAccess: "Public"}},
+					},
+				}
+				if versions[0] != "" {
+					c.Status.HostedClusterResult = &gcpv1.HostedClusterResult{Version: versions[0]}
+				}
+				list.Items = append(list.Items, c)
+			}
+			body, err := json.Marshal(list)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client := clusterTestClient(t, http.StatusOK, string(body))
+			err, out, _ := executeClusterTestCommand(t, client, context.Background(), "list")
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSpace(out), "\n")
+			if len(lines) != len(tt.wantRows)+1 {
+				t.Fatalf("unexpected list output:\n%s", out)
+			}
+			if got := strings.Contains(lines[0], "TARGET VERSION"); got != tt.wantTarget {
+				t.Errorf("target column present = %v, want %v:\n%s", got, tt.wantTarget, out)
+			}
+			for i, want := range tt.wantRows {
+				fields := strings.Fields(lines[i+1])
+				if len(fields) != 7+len(want) {
+					t.Fatalf("unexpected columns in row %d: %q", i, lines[i+1])
+				}
+				for j, version := range want {
+					if fields[4+j] != version {
+						t.Errorf("row %d version column %d = %q, want %q", i, j, fields[4+j], version)
+					}
 				}
 			}
 		})
