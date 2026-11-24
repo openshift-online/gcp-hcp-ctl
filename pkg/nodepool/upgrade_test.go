@@ -26,6 +26,7 @@ func TestUpgradeCommandPatch(t *testing.T) {
 		{name: "false clear flag preserves schedule", args: []string{"workers", "--version", "4.22.16", "--clear-start-time=false"}},
 		{name: "structured response", args: []string{"workers", "--version", "4.22.16", "-o", "json"}, jsonOutput: true},
 		{name: "candidate release", args: []string{"workers", "--version", "5.1.0-ec.2"}},
+		{name: "scheduled UTC time", args: []string{"workers", "--version", "4.22.16", "--start-time", "2026-12-01T03:00:00Z"}, start: "2026-12-01T03:00:00Z", startSet: true},
 		{name: "scheduled normalizes time", args: []string{"workers", "--version", "4.22.16", "--start-time", "2026-11-06T04:00:00+01:00"}, start: "2026-11-06T03:00:00Z", startSet: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,6 +94,11 @@ func TestUpgradeCommandInvalidInput(t *testing.T) {
 	for _, args := range [][]string{
 		{"workers", "--version", "4.22.16", "--start-time", ""},
 		{"workers", "--version", "4.22.16", "--start-time", "2026-11-20T03:00:00Z", "--clear-start-time"},
+		{"workers", "--version", "4.22.16", "--start-time", "2026-12-01T03:00:00.900Z"},
+		{"workers", "--version", "4.22.16", "--start-time", "2026-12-01T04:00:00.900+01:00"},
+		{"workers", "--version", "4.22.16", "--start-time", "2026-12-01T03:00:00.000Z"},
+		{"workers", "--version", "4.22.16", "--start-time", "2026-12-01T03:00:00,900Z"},
+		{"workers", "--version", "4.22.16", "--start-time", "2026-12-01T03:00:00.0000000001Z"},
 		{"workers", "--version", " v4.22.16"},
 		{"workers", "--version", " 4.22.16"},
 		{"workers", "--version", "4.22.16 "},

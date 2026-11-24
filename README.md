@@ -133,6 +133,7 @@ settings is idempotent. `--start-time` is the earliest permitted start, not a
 promise of an exact start time. Omitting `--start-time` preserves the existing
 schedule. `--clear-start-time` explicitly sends `upgradeStartTime: null` to remove
 it; this flag cannot be combined with `--start-time`.
+Start times must use whole seconds; fractional timestamps are rejected.
 
 `nodepool get` shows the observed `status.version` as **Current Version** and the
 desired release as **Target Version**. Lists show the observed **VERSION** and a

@@ -14,6 +14,7 @@ import (
 func newUpgradeCmd() *cobra.Command {
 	var version, startTime, outputFmt string
 	var clearStartTime bool
+	var parsedStartTime time.Time
 	cmd := &cobra.Command{
 		Use:   "upgrade <nodepool-name>",
 		Short: "Request an immediate or scheduled nodepool upgrade",
@@ -22,6 +23,7 @@ func newUpgradeCmd() *cobra.Command {
 The server validates the target before submitting it for installation.
 Omit --start-time to preserve any existing schedule. If there is no schedule,
 the upgrade is immediately eligible. Use --clear-start-time to clear a schedule.
+Start times must use whole seconds; fractional seconds are not supported.
 
   gcphcpctl nodepool upgrade workers --version 4.22.16
   gcphcpctl nodepool upgrade workers --version 4.22.16 --start-time 2026-11-20T03:00:00Z
@@ -38,18 +40,22 @@ the upgrade is immediately eligible. Use --clear-start-time to clear a schedule.
 				return fmt.Errorf("--version must be a canonical full semantic version without a v prefix or build metadata")
 			}
 			if cmd.Flags().Changed("start-time") {
-				if _, err := time.Parse(time.RFC3339, startTime); err != nil {
+				timestamp, err := time.Parse(time.RFC3339, startTime)
+				if err != nil {
 					return fmt.Errorf("--start-time must be an RFC 3339 timestamp")
 				}
+				if strings.ContainsAny(startTime, ".,") {
+					return fmt.Errorf("--start-time must use whole seconds without fractional seconds")
+				}
+				parsedStartTime = timestamp
 			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Preserve omitted release settings; explicit null clears a schedule.
 			release := map[string]any{"version": version}
-			if startTime != "" {
-				timestamp, _ := time.Parse(time.RFC3339, startTime)
-				release["upgradeStartTime"] = timestamp.UTC().Format(time.RFC3339)
+			if cmd.Flags().Changed("start-time") {
+				release["upgradeStartTime"] = parsedStartTime.UTC().Format(time.RFC3339)
 			} else if clearStartTime {
 				release["upgradeStartTime"] = nil
 			}
@@ -70,7 +76,7 @@ the upgrade is immediately eligible. Use --clear-start-time to clear a schedule.
 		},
 	}
 	cmd.Flags().StringVar(&version, "version", "", "Target version (required)")
-	cmd.Flags().StringVar(&startTime, "start-time", "", "Earliest upgrade start time (RFC 3339); omit to preserve the existing schedule")
+	cmd.Flags().StringVar(&startTime, "start-time", "", "Earliest upgrade start time (RFC 3339, whole seconds); omit to preserve the existing schedule")
 	cmd.Flags().BoolVar(&clearStartTime, "clear-start-time", false, "Clear the existing upgrade start time (send explicit null)")
 	cmd.MarkFlagsMutuallyExclusive("start-time", "clear-start-time")
 	cmd.Flags().StringVarP(&outputFmt, "output", "o", "text", "Output format: text, json, yaml")
