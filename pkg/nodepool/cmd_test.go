@@ -153,6 +153,37 @@ func TestNodePoolStatusDetail(t *testing.T) {
 		}
 	})
 
+	t.Run("When Deleting with progress it should show the full message in get but not list", func(t *testing.T) {
+		now := metav1.NewTime(time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC))
+		message := "2 of 5 resources still being deleted: nodepools clusters-123/workers; hostedclusters clusters-123/my-cluster (KubeAPIError: waiting for IAM)"
+		np := &gcpv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+			Status: gcpv1.NodePoolStatus{Conditions: []metav1.Condition{
+				{Type: "NodePoolAvailable", Status: metav1.ConditionTrue},
+				{Type: "DeletionProgressing", Status: metav1.ConditionTrue, Reason: "DeletionBlocked", Message: message},
+			}},
+		}
+		if got, want := nodePoolStatusDetail(np), "Deleting ("+message+")"; got != want {
+			t.Errorf("nodePoolStatusDetail() = %q, want %q", got, want)
+		}
+		if got := nodePoolStatus(np); got != "Deleting" {
+			t.Errorf("nodePoolStatus() = %q, want Deleting", got)
+		}
+	})
+
+	t.Run("When Deleting with no progress message it should show the reason", func(t *testing.T) {
+		now := metav1.NewTime(time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC))
+		np := &gcpv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+			Status: gcpv1.NodePoolStatus{Conditions: []metav1.Condition{
+				{Type: "DeletionProgressing", Status: metav1.ConditionTrue, Reason: "DeletionInProgress"},
+			}},
+		}
+		if got := nodePoolStatusDetail(np); got != "Deleting (DeletionInProgress)" {
+			t.Errorf("nodePoolStatusDetail() = %q, want Deleting (DeletionInProgress)", got)
+		}
+	})
+
 	t.Run("When NodePoolAvailable is False it should return Progressing with the available condition message", func(t *testing.T) {
 		np := &gcpv1.NodePool{
 			ObjectMeta: metav1.ObjectMeta{Generation: 1},

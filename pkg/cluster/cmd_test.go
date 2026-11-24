@@ -334,6 +334,37 @@ func TestClusterStatusDetail(t *testing.T) {
 			t.Errorf("expected 'Deleting', got %q", got)
 		}
 	})
+
+	t.Run("When Deleting with progress it should show the full message in get but not list", func(t *testing.T) {
+		now := metav1.NewTime(time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC))
+		message := "2 of 5 resources still being deleted: hostedclusters clusters-123/my-cluster; waiting for 2 nodepools to be deleted"
+		c := &gcpv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+			Status: gcpv1.ClusterStatus{Conditions: []metav1.Condition{
+				{Type: "HostedClusterAvailable", Status: metav1.ConditionTrue},
+				{Type: "DeletionProgressing", Status: metav1.ConditionTrue, Reason: "DeletionInProgress", Message: message},
+			}},
+		}
+		if got, want := clusterStatusDetail(c), "Deleting ("+message+")"; got != want {
+			t.Errorf("clusterStatusDetail() = %q, want %q", got, want)
+		}
+		if got := clusterStatus(c); got != "Deleting" {
+			t.Errorf("clusterStatus() = %q, want Deleting", got)
+		}
+	})
+
+	t.Run("When Deleting with no progress message it should show the reason", func(t *testing.T) {
+		now := metav1.NewTime(time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC))
+		c := &gcpv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+			Status: gcpv1.ClusterStatus{Conditions: []metav1.Condition{
+				{Type: "DeletionProgressing", Status: metav1.ConditionTrue, Reason: "DeletionBlocked"},
+			}},
+		}
+		if got := clusterStatusDetail(c); got != "Deleting (DeletionBlocked)" {
+			t.Errorf("clusterStatusDetail() = %q, want Deleting (DeletionBlocked)", got)
+		}
+	})
 }
 
 func TestReleaseVersion(t *testing.T) {

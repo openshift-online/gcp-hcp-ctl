@@ -252,6 +252,12 @@ func deriveStatusFromConditions(
 	healthyConditionType string, // empty string if no health condition
 ) (phase, detail string) {
 	if deletionTimestamp != nil {
+		if deletion := meta.FindStatusCondition(conditions, "DeletionProgressing"); deletion != nil {
+			if deletion.Message != "" {
+				return "Deleting", deletion.Message
+			}
+			return "Deleting", deletion.Reason
+		}
 		return "Deleting", ""
 	}
 	if len(conditions) == 0 {
