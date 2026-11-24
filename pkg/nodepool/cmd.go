@@ -34,7 +34,7 @@ func NewNodePoolCmd(effective *config.Config) *cobra.Command {
 	npCmd = &cobra.Command{
 		Use:          "nodepool",
 		Short:        "Manage nodepools",
-		Long:         `Create, get, list, delete, and scale nodepools via the platform API server.`,
+		Long:         `Create, get, list, delete, scale, and upgrade nodepools via the platform API server.`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if parent := npCmd.Parent(); parent != nil && parent.PersistentPreRunE != nil {
@@ -63,6 +63,7 @@ func NewNodePoolCmd(effective *config.Config) *cobra.Command {
 	npCmd.AddCommand(newListCmd())
 	npCmd.AddCommand(newDeleteCmd())
 	npCmd.AddCommand(newScaleCmd())
+	npCmd.AddCommand(newUpgradeCmd())
 
 	return npCmd
 }
@@ -312,11 +313,25 @@ func conditionSummary(cond *metav1.Condition, generation int64) string {
 	return cond.Reason
 }
 
-func releaseVersion(np *gcpv1.NodePool) string {
-	if np.Spec.Release.Version != "" {
-		return np.Spec.Release.Version
+func observedVersion(np *gcpv1.NodePool) string {
+	if np.Status.Version != "" {
+		return np.Status.Version
 	}
-	return "<none>"
+	return "<unknown>"
+}
+
+// targetVersion describes a requested upgrade, including a rollout that has
+// reached the desired version but is still waiting for healthy completion.
+func targetVersion(np *gcpv1.NodePool) string {
+	desired := np.Spec.Release.Version
+	if np.Status.Version == "" || desired == "" {
+		return "-"
+	}
+	if desired != np.Status.Version ||
+		meta.IsStatusConditionTrue(np.Status.Conditions, "NodePoolUpgradeProgressing") {
+		return desired
+	}
+	return "-"
 }
 
 func nodeCount(np *gcpv1.NodePool) string {
