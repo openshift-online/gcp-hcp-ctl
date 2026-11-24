@@ -57,7 +57,9 @@ func TestUpgradeCommandPatch(t *testing.T) {
 					t.Errorf("upgradeStartTime = %#v (present=%t), want %#v (present=%t)", start, present, tc.start, tc.startSet)
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(map[string]any{"apiVersion": "gcp.managed.openshift.io/v1", "kind": "NodePool", "metadata": map[string]any{"name": "workers"}, "spec": map[string]any{"release": release}, "status": map[string]any{"version": "4.22.14"}})
+				if err := json.NewEncoder(w).Encode(map[string]any{"apiVersion": "gcp.managed.openshift.io/v1", "kind": "NodePool", "metadata": map[string]any{"name": "workers"}, "spec": map[string]any{"release": release}, "status": map[string]any{"version": "4.22.14"}}); err != nil {
+					t.Errorf("encoding nodepool response: %v", err)
+				}
 			}))
 			defer server.Close()
 			client, err := platformapi.NewClientForTest(server.URL, "my-project")
