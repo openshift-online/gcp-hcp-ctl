@@ -33,8 +33,9 @@ the upgrade is immediately eligible. Use --clear-start-time to clear a schedule.
 			if version == "" {
 				return fmt.Errorf("--version is required")
 			}
-			if _, err := utilversion.ParseSemantic(version); err != nil || strings.HasPrefix(version, "v") || strings.Contains(version, "+") {
-				return fmt.Errorf("--version must be a full semantic version without a v prefix or build metadata")
+			parsedVersion, err := utilversion.ParseSemantic(version)
+			if err != nil || parsedVersion.String() != version || strings.Contains(version, "+") {
+				return fmt.Errorf("--version must be a canonical full semantic version without a v prefix or build metadata")
 			}
 			if cmd.Flags().Changed("start-time") {
 				if _, err := time.Parse(time.RFC3339, startTime); err != nil {

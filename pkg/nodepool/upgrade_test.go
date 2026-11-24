@@ -93,12 +93,22 @@ func TestUpgradeCommandInvalidInput(t *testing.T) {
 	for _, args := range [][]string{
 		{"workers", "--version", "4.22.16", "--start-time", ""},
 		{"workers", "--version", "4.22.16", "--start-time", "2026-11-20T03:00:00Z", "--clear-start-time"},
+		{"workers", "--version", " v4.22.16"},
+		{"workers", "--version", " 4.22.16"},
+		{"workers", "--version", "4.22.16 "},
+		{"workers", "--version", "\tv4.22.16"},
 		{}, {"workers"}, {"workers", "--version", "invalid"}, {"workers", "--version", "4.22"}, {"workers", "--version", "v4.22.16"}, {"workers", "--version", "4.22.16+build"}, {"workers", "--version", "4.22.16", "--start-time", "tomorrow"}, {"workers", "extra", "--version", "4.22.16"},
 	} {
-		cmd := newUpgradeCmd()
-		cmd.SetArgs(args)
-		if err := cmd.Execute(); err == nil {
+		calls := 0
+		err, _, _ := executeNodepoolServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			w.WriteHeader(http.StatusInternalServerError)
+		}), append([]string{"upgrade"}, args...)...)
+		if err == nil {
 			t.Errorf("expected error for %v", args)
+		}
+		if calls != 0 {
+			t.Errorf("invalid input %v sent %d API requests", args, calls)
 		}
 	}
 }
