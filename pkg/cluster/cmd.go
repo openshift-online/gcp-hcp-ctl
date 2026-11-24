@@ -34,7 +34,7 @@ func NewClusterCmd(effective *config.Config) *cobra.Command {
 	clusterCmd = &cobra.Command{
 		Use:   "cluster",
 		Short: "Manage GCP HCP clusters",
-		Long:  `Create, get, list, delete, and log in to GCP HCP clusters via the platform API server.`,
+		Long:  `Create, get, list, delete, upgrade, and log in to GCP HCP clusters via the platform API server.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if parent := clusterCmd.Parent(); parent != nil && parent.PersistentPreRunE != nil {
 				if err := parent.PersistentPreRunE(cmd, args); err != nil {
@@ -68,6 +68,7 @@ func NewClusterCmd(effective *config.Config) *cobra.Command {
 	clusterCmd.AddCommand(newLoginCmd())
 	clusterCmd.AddCommand(newSetUpgradePolicyCmd())
 	clusterCmd.AddCommand(newClearUpgradePolicyCmd())
+	clusterCmd.AddCommand(newUpgradeCmd())
 
 	return clusterCmd
 }
@@ -316,8 +317,23 @@ func truncateString(s string, maxRunes int) string {
 }
 
 func releaseVersion(c *gcpv1.Cluster) string {
-	if c.Spec.Release.Version != "" {
-		return c.Spec.Release.Version
+	if version := displayVersion(c); version != "" {
+		return version
 	}
 	return "<none>"
+}
+
+func displayVersion(c *gcpv1.Cluster) string {
+	if hcr := c.Status.HostedClusterResult; hcr != nil && hcr.Version != "" {
+		return hcr.Version
+	}
+	return c.Spec.Release.Version
+}
+
+// targetVersion returns pending release intent when it differs from the observed version.
+func targetVersion(c *gcpv1.Cluster) string {
+	if hcr := c.Status.HostedClusterResult; hcr != nil && hcr.Version != "" && hcr.Version != c.Spec.Release.Version {
+		return c.Spec.Release.Version
+	}
+	return ""
 }

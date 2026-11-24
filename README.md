@@ -81,6 +81,31 @@ Cluster commands use the platform API endpoint discovered from `--region` and
 endpoint, set `--api-endpoint`, `GCPHCPCTL_API_ENDPOINT`, or the `api_endpoint`
 config key.
 
+#### Manual control-plane upgrades
+
+Request a minor stream or an exact release through the existing Cluster:
+
+```bash
+# Let the server select the newest eligible patch in the requested minor
+gcphcpctl cluster upgrade control-plane my-cluster --version 4.23
+
+# Request an exact eligible release
+gcphcpctl cluster upgrade control-plane my-cluster --version 4.23.9
+
+# Inspect the running version, target, and upgrade conditions
+gcphcpctl cluster get my-cluster
+```
+
+The command patches only `spec.release.version`, preserving channel and
+maintenance settings. The server validates the upgrade path and approves the
+rollout when its checks permit it. Saving the desired release does not mean
+rollout has started. `cluster get` shows the observed **Current Version** and
+desired **Target Version** separately, including while an upgrade is pending or
+being applied. The upgrade command also supports `-o json` and `-o yaml` to return
+the updated Cluster.
+Text lists add a **TARGET VERSION** column when any listed cluster has a pending
+target; the **VERSION** column continues to show the observed release.
+
 ### Nodepool Management (`nodepool`)
 
 Create, inspect, list, scale, and delete nodepools via the platform API server.
@@ -551,6 +576,17 @@ make clean    # Remove build artifacts
   `gcloud auth login` if needed. ADC login alone does not establish that session.
 - Cloud Workflows deployed in the target project/region
 
+### Dependency versions
+
+The Gecko `platform-api` and `orlop` modules, `golang.org/x/exp`, and
+`google.golang.org/genproto` (including its `googleapis/*` submodules) have no
+applicable stable module tags. Their Go pseudo-versions are intentional
+exceptions to the preference for stable tagged dependencies: each identifies a
+fixed upstream commit rather than a moving branch. Keep the two Gecko modules
+pinned to the same reviewed commit and commit `go.mod` and `go.sum` together.
+This exception does not apply to tagged prerelease dependencies or replace
+compatibility and vulnerability review.
+
 ## Architecture
 
 The CLI has the following command categories:
@@ -848,6 +884,6 @@ The server and ESPv2 Endpoints configuration must both support the new routes.
 `not found`); the CLI does not infer a missing grant or fall back to the private
 API. Role definitions continue to be managed privately through Helm.
 
-Discovery uses small CLI-local PlatformRole wire types, so it does not require a
-Gecko dependency update or change existing upgrade-policy commands. The public
+Discovery uses the public PlatformRole types from the Gecko API SDK. Existing
+upgrade-policy commands keep their Cluster maintenance behavior. The public
 server and gateway still need the PlatformRole discovery endpoints.

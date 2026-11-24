@@ -37,7 +37,19 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			t := output.NewTable(out, "NAME", "PROJECT", "INFRA ID", "REGION", "VERSION", "ACCESS", "STATUS", "AGE")
+			showTargetVersion := false
+			for _, c := range clusterList.Items {
+				if targetVersion(&c) != "" {
+					showTargetVersion = true
+					break
+				}
+			}
+			headers := []string{"NAME", "PROJECT", "INFRA ID", "REGION", "VERSION"}
+			if showTargetVersion {
+				headers = append(headers, "TARGET VERSION")
+			}
+			headers = append(headers, "ACCESS", "STATUS", "AGE")
+			t := output.NewTable(out, headers...)
 			for _, c := range clusterList.Items {
 				region := ""
 				access := ""
@@ -45,16 +57,22 @@ func newListCmd() *cobra.Command {
 					region = c.Spec.Platform.GCP.Region
 					access = c.Spec.Platform.GCP.EndpointAccess
 				}
-				t.AddRow(
+				row := []string{
 					c.Name,
 					c.Namespace,
 					c.Spec.InfraID,
 					region,
 					releaseVersion(&c),
-					access,
-					clusterStatus(&c),
-					output.Age(c.CreationTimestamp.UTC().Format(time.RFC3339)),
-				)
+				}
+				if showTargetVersion {
+					target := targetVersion(&c)
+					if target == "" {
+						target = "<none>"
+					}
+					row = append(row, target)
+				}
+				row = append(row, access, clusterStatus(&c), output.Age(c.CreationTimestamp.UTC().Format(time.RFC3339)))
+				t.AddRow(row...)
 			}
 			return t.Flush()
 		},
