@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/workflows v1.22.1
 	github.com/ergochat/readline v0.1.3
 	github.com/go-logr/logr v1.4.4
-	github.com/openshift-online/gecko/platform-api v0.0.0-20261124082655-6358f497a697
+	github.com/openshift-online/gecko/platform-api v0.0.0-20261124175912-1659ced8a51b
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	golang.org/x/mod v0.43.0
