@@ -37,7 +37,11 @@ func newListCmd() *cobra.Command {
 		}
 		t := output.NewTable(cmd.OutOrStdout(), "NAME", "SUBJECT", "ROLE KIND", "ROLE NAME", "AGE", "CONDITION")
 		for _, b := range list.Items {
-			t.AddRow(b.Name, b.Spec.Subject, b.Spec.RoleRef.Kind, b.Spec.RoleRef.Name, access.Age(b.CreationTimestamp), conditionPreview(b.Spec.Condition))
+			preview, err := conditionPreview(b.Spec.Conditions)
+			if err != nil {
+				return err
+			}
+			t.AddRow(b.Name, b.Spec.Subject, b.Spec.RoleRef.Kind, b.Spec.RoleRef.Name, access.Age(b.CreationTimestamp), preview)
 		}
 		return t.Flush()
 	}}

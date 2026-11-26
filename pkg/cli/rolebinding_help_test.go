@@ -53,15 +53,10 @@ func TestRoleBindingConditionHelp(t *testing.T) {
 			}
 			for _, want := range []string{
 				fmt.Sprintf("gcphcpctl rolebinding %s <name> [flags]", command),
-				`context.resourceName like "bob*"`,
-				"--condition string", "--subject string", "--platform-role string", "--role string",
-				"Cedar boolean expression, not a complete policy", `"has" before accessing optional fields`,
-				"Omitting --condition creates an unconditional binding on create",
-				"preserves the existing condition on update", "(--condition '') makes the binding unconditional",
-				"context.resourcePlural", "context.resourceName", "context.method", "context.spec",
-				"https://docs.cedarpolicy.com/policies/syntax-operators.html",
-				"independent grants may still", "Changes may take time to propagate",
-				"Keep a separate administrator grant", "prevent you from managing access or clearing it",
+				"--condition stringArray", "--subject string", "--platform-role string", "--role string",
+				"nonempty JSON string", "Only In and NotIn are supported", "replace the complete list", "sole wildcard",
+				"Independent grants remain additive", "Changes may take time to propagate",
+				"Keep a separate administrator grant",
 			} {
 				if !strings.Contains(help, want) {
 					t.Errorf("help missing %q:\n%s", want, help)
@@ -69,15 +64,13 @@ func TestRoleBindingConditionHelp(t *testing.T) {
 			}
 			examples := help[strings.Index(help, "\nExamples:\n"):strings.Index(help, "\nFlags:\n")]
 			if command == "create" {
-				if !strings.HasPrefix(opening, "Create a RoleBinding") || !strings.Contains(examples, "rolebinding create bob-viewer") || !strings.Contains(examples, "rolebinding create viewer") {
+				if !strings.HasPrefix(opening, "Create a RoleBinding") || !strings.Contains(examples, "rolebinding create regional-viewer") {
 					t.Fatalf("missing create-specific description/examples:\n%s", help)
 				}
 			} else {
 				for _, want := range []string{
 					"Only supplied fields change", "At least one update flag is required", "permission-set replacement",
-					"--subject bob@example.com", "--role limited-operations", "--platform-role cluster-viewer",
-					"# Replace the condition.", "# Clear the condition.", "# Change several fields together.",
-					"--subject bob@example.com --role limited-operations --condition ''",
+					"--subject bob@example.com", "--clear-conditions", "Replace the complete list",
 				} {
 					if !strings.Contains(help, want) {
 						t.Errorf("update help missing %q:\n%s", want, help)
@@ -112,5 +105,47 @@ func TestConditionHelpIsCommandScoped(t *testing.T) {
 				t.Fatal("condition help leaked into another command")
 			}
 		})
+	}
+}
+
+// Real root execution must reject invalid requirements before inherited setup.
+func TestRoleBindingConditionsBeforeDiscoveryAndAuth(t *testing.T) {
+	var calls atomic.Int32
+	old := http.DefaultTransport
+	http.DefaultTransport = platformRoleTraceTransport(func(r *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, fmt.Errorf("unexpected network request")
+	})
+	t.Cleanup(func() { http.DefaultTransport = old })
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "auth-invoked")
+	if err := os.WriteFile(filepath.Join(dir, "gcloud"), []byte("#!/bin/sh\nprintf invoked > '"+marker+"'\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(dir, "missing.json"))
+	t.Setenv("GCPHCPCTL_API_ENDPOINT", "")
+	t.Setenv("GCPHCPCTL_REGION", "us-central1")
+	t.Setenv("GCPHCPCTL_ENVIRONMENT", "development")
+	t.Setenv("GCPHCPCTL_PROJECT", "customer")
+	for _, verb := range []string{"create", "update"} {
+		for _, flags := range [][]string{{"--condition", `name == "x"`}, {"--condition", `name != "x"`}, {"--condition", ""}, {"--condition", `name In [null]`}, {"--condition", `name In ["x"]`, "--condition", "broken"}, {"--condition", `name In ["x"]`, "--clear-conditions=false"}} {
+			root := newRootCmd()
+			var out bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&out)
+			args := append([]string{"rolebinding", verb, "grant", "--config", filepath.Join(dir, "absent.yaml")}, flags...)
+			root.SetArgs(args)
+			err := root.Execute()
+			if err == nil || (!strings.Contains(err.Error(), "condition") && !strings.Contains(err.Error(), "unknown flag")) {
+				t.Fatalf("%v: %v", args, err)
+			}
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("%d network calls", calls.Load())
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("auth invoked")
 	}
 }

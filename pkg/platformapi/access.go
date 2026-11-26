@@ -119,12 +119,12 @@ func (c *Client) RoleBindings() RoleBindingInterface {
 	return &roleBindingClient{restClient: c.restClient}
 }
 
-// RoleBindingPatch contains only fields supplied by the caller. A non-nil
-// empty Condition explicitly clears the restriction.
+// RoleBindingPatch contains only fields supplied by the caller. Conditions
+// distinguishes omission (preserve) from a pointer to a non-nil empty slice (clear).
 type RoleBindingPatch struct {
-	Subject   *string        `json:"subject,omitempty"`
-	RoleRef   *gcpv1.RoleRef `json:"roleRef,omitempty"`
-	Condition *string        `json:"condition,omitempty"`
+	Subject    *string                         `json:"subject,omitempty"`
+	RoleRef    *gcpv1.RoleRef                  `json:"roleRef,omitempty"`
+	Conditions *[]gcpv1.RoleBindingRequirement `json:"conditions,omitempty"`
 }
 
 // RoleBindingInterface defines operations on RoleBinding resources.

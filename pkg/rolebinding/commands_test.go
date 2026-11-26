@@ -58,10 +58,10 @@ func TestCreateConditionWire(t *testing.T) {
 	cases := []struct {
 		name      string
 		flags     []string
-		condition *string
+		condition any
 	}{
-		{"absent", nil, nil}, {"empty", []string{"--condition", ""}, str("")}, {"equals", []string{"--condition="}, str("")},
-		{"whitespace", []string{"--condition", "  \n\t"}, str("  \n\t")}, {"complex", []string{"--condition", "a == \"é\"\n&& b"}, str("a == \"é\"\n&& b")}}
+		{"absent", nil, nil}, {"structured", []string{"--condition", `name In ["demo"]`}, wireConditions("demo")}}
+
 	for _, tc := range cases {
 		for _, ref := range []string{"role", "platform-role"} {
 			t.Run(tc.name+ref, func(t *testing.T) {
@@ -77,8 +77,8 @@ func TestCreateConditionWire(t *testing.T) {
 						t.Fatal(e)
 					}
 					spec := body["spec"].(map[string]any)
-					value, ok := spec["condition"]
-					if ok != (tc.condition != nil) || ok && value != *tc.condition {
+					value, ok := spec["conditions"]
+					if ok != (tc.condition != nil) || ok && !reflect.DeepEqual(value, tc.condition) {
 						t.Errorf("condition %#v", spec)
 					}
 					if spec["subject"] != "Alice@example.com" {
@@ -103,17 +103,17 @@ func TestUpdatePatch(t *testing.T) {
 		{"subject", []string{"--subject", " Bob@EXAMPLE.COM "}, map[string]any{"subject": "Bob@example.com"}},
 		{"custom", []string{"--role", "custom"}, map[string]any{"roleRef": map[string]any{"kind": "Role", "name": "custom", "apiGroup": "gcp.managed.openshift.io"}}},
 		{"platform", []string{"--platform-role", "viewer"}, map[string]any{"roleRef": map[string]any{"kind": "PlatformRole", "name": "viewer", "apiGroup": "gcp.managed.openshift.io"}}},
-		{"condition", []string{"--condition", " \ntrue "}, map[string]any{"condition": " \ntrue "}},
-		{"clear", []string{"--condition="}, map[string]any{"condition": ""}},
-		{"subject-condition", []string{"--subject", "b@X", "--condition", ""}, map[string]any{"subject": "b@x", "condition": ""}},
-		{"role-condition", []string{"--role", "x", "--condition", "c"}, map[string]any{"roleRef": map[string]any{"kind": "Role", "name": "x", "apiGroup": "gcp.managed.openshift.io"}, "condition": "c"}},
+		{"condition", []string{"--condition", `name In ["demo"]`}, map[string]any{"conditions": wireConditions("demo")}},
+		{"clear", []string{"--clear-conditions"}, map[string]any{"conditions": []any{}}},
+		{"subject-condition", []string{"--subject", "b@X", "--clear-conditions"}, map[string]any{"subject": "b@x", "conditions": []any{}}},
+		{"role-condition", []string{"--role", "x", "--condition", `name In ["c"]`}, map[string]any{"roleRef": map[string]any{"kind": "Role", "name": "x", "apiGroup": "gcp.managed.openshift.io"}, "conditions": wireConditions("c")}},
 		{"subject-role", []string{"--subject", "b@X", "--role", "x"}, map[string]any{"subject": "b@x", "roleRef": map[string]any{"kind": "Role", "name": "x", "apiGroup": "gcp.managed.openshift.io"}}},
-		{"all", []string{"--subject", "b@X", "--platform-role", "x", "--condition", ""}, map[string]any{"subject": "b@x", "condition": "", "roleRef": map[string]any{"kind": "PlatformRole", "name": "x", "apiGroup": "gcp.managed.openshift.io"}}},
+		{"all", []string{"--subject", "b@X", "--platform-role", "x", "--clear-conditions"}, map[string]any{"subject": "b@x", "conditions": []any{}, "roleRef": map[string]any{"kind": "PlatformRole", "name": "x", "apiGroup": "gcp.managed.openshift.io"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			original := map[string]any{"subject": "old@example.com", "roleRef": map[string]any{"kind": "Role", "name": "old", "apiGroup": "gcp.managed.openshift.io"}, "condition": "old condition"}
+			original := map[string]any{"subject": "old@example.com", "roleRef": map[string]any{"kind": "Role", "name": "old", "apiGroup": "gcp.managed.openshift.io"}, "conditions": wireConditions("old condition")}
 			args := append([]string{"update", "grant", "-o", "json"}, tc.flags...)
 			out, stderr, err := executeBinding(t, func(w http.ResponseWriter, r *http.Request) {
 				calls++
@@ -138,6 +138,9 @@ func TestUpdatePatch(t *testing.T) {
 			var got map[string]any
 			if e := json.Unmarshal([]byte(out), &got); e != nil {
 				t.Fatal(e)
+			}
+			if fields := original["conditions"]; fields != nil && len(fields.([]any)) == 0 {
+				delete(original, "conditions")
 			}
 			if !reflect.DeepEqual(got["spec"], original) || got["metadata"].(map[string]any)["uid"] != "original" {
 				t.Fatal(got)
@@ -176,7 +179,7 @@ func TestUpdateErrorsAreSafe(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, `{"message":"SECRET SERVER PROSE"}`)
-			}, "update", "grant", "--condition", "invalid")
+			}, "update", "grant", "--condition", `name In ["invalid"]`)
 			if err == nil || err.Error() != tc.want {
 				t.Fatalf("error = %v, want %q", err, tc.want)
 			}
@@ -201,7 +204,7 @@ func TestGetAndListFormats(t *testing.T) {
 				}
 				args = append(args, "-o", format)
 				out, stderr, err := executeBinding(t, func(w http.ResponseWriter, r *http.Request) {
-					binding := obj(map[string]any{"subject": "a@b", "roleRef": map[string]any{"kind": "Role", "name": "r", "apiGroup": "gcp.managed.openshift.io"}, "condition": condition})
+					binding := obj(map[string]any{"subject": "a@b", "roleRef": map[string]any{"kind": "Role", "name": "r", "apiGroup": "gcp.managed.openshift.io"}, "conditions": wireConditions(condition)})
 					if command == "list" {
 						response(w, map[string]any{"apiVersion": "gcp.managed.openshift.io/v1", "kind": "RoleBindingList", "metadata": map[string]any{"resourceVersion": "5"}, "items": []any{binding}})
 					} else {
@@ -212,7 +215,7 @@ func TestGetAndListFormats(t *testing.T) {
 					t.Fatalf("%v %s", err, stderr)
 				}
 				if format == "text" {
-					if command == "get" && !strings.Contains(out, "--condition "+conditionArgument(&condition)) {
+					if command == "get" && !strings.Contains(out, "  - "+formattedName(t, condition)) {
 						t.Fatal(out)
 					}
 					if command == "list" && (!strings.Contains(out, `line one\n\t`) || strings.Contains(out, condition)) {
@@ -227,7 +230,7 @@ func TestGetAndListFormats(t *testing.T) {
 					if command == "list" {
 						b = v["items"].([]any)[0].(map[string]any)
 					}
-					if b["spec"].(map[string]any)["condition"] != condition || b["metadata"].(map[string]any)["uid"] != "original" {
+					if !reflect.DeepEqual(b["spec"].(map[string]any)["conditions"], wireConditions(condition)) || b["metadata"].(map[string]any)["uid"] != "original" {
 						t.Fatal(v)
 					}
 				}
@@ -236,8 +239,8 @@ func TestGetAndListFormats(t *testing.T) {
 	}
 }
 
-// The fixture rejects supplied expressions; this tests CLI pass-through and safe
-// error handling, not Cedar validity or the live server's length constraints.
+// The fixture rejects valid requirements containing opaque, policy-looking and
+// long values. This tests safe server errors, not compiler length estimation.
 func TestConditionsForwardedToServerAndRejectedSafely(t *testing.T) {
 	for _, command := range []string{"create", "update"} {
 		for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
@@ -250,7 +253,7 @@ func TestConditionsForwardedToServerAndRejectedSafely(t *testing.T) {
 				{"trailing-statement", `true } permit(principal, action, resource) when { true`},
 			} {
 				t.Run(fmt.Sprintf("%s/%d/%s", command, status, tc.name), func(t *testing.T) {
-					args := []string{command, "grant", "--condition", tc.expression, "-o", "json"}
+					args := []string{command, "grant", "--condition", encodedCondition(t, tc.expression), "-o", "json"}
 					method, path := http.MethodPatch, testBase+"/grant"
 					if command == "create" {
 						args = append(args, "--subject", "a@b", "--role", "viewer")
@@ -270,8 +273,8 @@ func TestConditionsForwardedToServerAndRejectedSafely(t *testing.T) {
 							http.Error(w, "invalid fixture request", http.StatusBadRequest)
 							return
 						}
-						if body.Spec["condition"] != tc.expression {
-							t.Error("condition not sent unchanged")
+						if !reflect.DeepEqual(body.Spec["conditions"], wireConditions(tc.expression)) {
+							t.Error("structured values not preserved")
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(status)
@@ -301,7 +304,7 @@ func TestConditionUpdateDanglingRoleAndMalformedResponse(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
-			}, "update", "grant", "--condition", "")
+			}, "update", "grant", "--clear-conditions")
 			if err == nil || calls != 1 || strings.Contains(err.Error(), "private") || strings.Contains(out+stderr, propagation) {
 				t.Fatalf("%v %d %q %q", err, calls, out, stderr)
 			}
@@ -312,12 +315,12 @@ func TestConditionUpdateDanglingRoleAndMalformedResponse(t *testing.T) {
 func TestConditionStatesAndPreservation(t *testing.T) {
 	for _, initial := range []struct {
 		name      string
-		condition *string
-	}{{"absent", nil}, {"empty", str("")}, {"present", str("a\n b")}} {
+		condition any
+	}{{"absent", nil}, {"empty", []any{}}, {"present", wireConditions("a\n b")}} {
 		t.Run(initial.name, func(t *testing.T) {
 			spec := map[string]any{"subject": "old@x", "roleRef": map[string]any{"kind": "Role", "name": "old", "apiGroup": "gcp.managed.openshift.io"}}
 			if initial.condition != nil {
-				spec["condition"] = *initial.condition
+				spec["conditions"] = initial.condition
 			}
 			out, stderr, err := executeBinding(t, func(w http.ResponseWriter, r *http.Request) {
 				var patch map[string]any
@@ -335,8 +338,8 @@ func TestConditionStatesAndPreservation(t *testing.T) {
 			if e := yaml.Unmarshal([]byte(out), &got); e != nil {
 				t.Fatal(e)
 			}
-			value, ok := got["spec"].(map[string]any)["condition"]
-			if ok != (initial.condition != nil) || ok && value != *initial.condition {
+			value, ok := got["spec"].(map[string]any)["conditions"]
+			if ok != (initial.condition != nil && len(initial.condition.([]any)) > 0) || ok && !reflect.DeepEqual(value, initial.condition) {
 				t.Fatalf("condition=%#v present=%v", value, ok)
 			}
 		})
@@ -352,9 +355,9 @@ func TestListConditionPagination(t *testing.T) {
 		switch r.URL.Query().Get("continue") {
 		case "":
 			meta["continue"] = "next"
-			items = append(items, obj(map[string]any{"subject": "alice@example.com", "roleRef": map[string]any{"kind": "Role", "name": "a"}, "condition": "first"}))
+			items = append(items, obj(map[string]any{"subject": "alice@example.com", "roleRef": map[string]any{"kind": "Role", "name": "a"}, "conditions": wireConditions("first")}))
 		case "next":
-			items = append(items, obj(map[string]any{"subject": "alice@example.com", "roleRef": map[string]any{"kind": "Role", "name": "b"}, "condition": "second"}), obj(map[string]any{"subject": "bob@example.com", "roleRef": map[string]any{"kind": "Role", "name": "c"}, "condition": "ignored"}))
+			items = append(items, obj(map[string]any{"subject": "alice@example.com", "roleRef": map[string]any{"kind": "Role", "name": "b"}, "conditions": wireConditions("second")}), obj(map[string]any{"subject": "bob@example.com", "roleRef": map[string]any{"kind": "Role", "name": "c"}, "conditions": wireConditions("ignored")}))
 		default:
 			t.Error("bad token")
 		}
@@ -368,7 +371,7 @@ func TestListConditionPagination(t *testing.T) {
 		t.Fatal(e)
 	}
 	items := list["items"].([]any)
-	if len(items) != 2 || items[0].(map[string]any)["spec"].(map[string]any)["condition"] != "first" || items[1].(map[string]any)["spec"].(map[string]any)["condition"] != "second" || list["metadata"].(map[string]any)["resourceVersion"] != "5" {
+	if len(items) != 2 || !reflect.DeepEqual(items[0].(map[string]any)["spec"].(map[string]any)["conditions"], wireConditions("first")) || !reflect.DeepEqual(items[1].(map[string]any)["spec"].(map[string]any)["conditions"], wireConditions("second")) || list["metadata"].(map[string]any)["resourceVersion"] != "5" {
 		t.Fatal(list)
 	}
 }
@@ -378,18 +381,18 @@ func TestMutationOutputUsesReturnedCondition(t *testing.T) {
 		for _, format := range []string{"text", "json", "yaml"} {
 			t.Run(command+format, func(t *testing.T) {
 				actual := "server value\n  'quoted'"
-				args := []string{command, "grant", "--condition", "client value", "-o", format}
+				args := []string{command, "grant", "--condition", encodedCondition(t, "client value"), "-o", format}
 				if command == "create" {
 					args = append(args, "--subject", "a@b", "--role", "r")
 				}
 				out, stderr, err := executeBinding(t, func(w http.ResponseWriter, r *http.Request) {
-					response(w, obj(map[string]any{"subject": "a@b", "roleRef": map[string]any{"kind": "Role", "name": "r", "apiGroup": "gcp.managed.openshift.io"}, "condition": actual}))
+					response(w, obj(map[string]any{"subject": "a@b", "roleRef": map[string]any{"kind": "Role", "name": "r", "apiGroup": "gcp.managed.openshift.io"}, "conditions": wireConditions(actual)}))
 				}, args...)
 				if err != nil || strings.Count(out+stderr, propagation) != 1 {
 					t.Fatalf("%v %q %q", err, out, stderr)
 				}
 				if format == "text" {
-					if stderr != "" || !strings.Contains(out, "Condition:\n--condition "+conditionArgument(&actual)+"\n") || strings.Contains(out, "client value") {
+					if stderr != "" || !strings.Contains(out, "Conditions:\n  - "+formattedName(t, actual)+"\n") || strings.Contains(out, "client value") {
 						t.Fatalf("%q %q", out, stderr)
 					}
 					return
@@ -401,7 +404,7 @@ func TestMutationOutputUsesReturnedCondition(t *testing.T) {
 				if e := yaml.Unmarshal([]byte(out), &got); e != nil {
 					t.Fatal(e)
 				}
-				if got["spec"].(map[string]any)["condition"] != actual {
+				if !reflect.DeepEqual(got["spec"].(map[string]any)["conditions"], wireConditions(actual)) {
 					t.Fatal(got)
 				}
 			})
@@ -419,8 +422,91 @@ func TestPatchTransportFailure(t *testing.T) {
 			return
 		}
 		_ = conn.Close()
-	}, "update", "grant", "--condition", "true")
+	}, "update", "grant", "--condition", `name In ["true"]`)
 	if err == nil || calls != 1 || strings.Contains(out+stderr, propagation) {
 		t.Fatalf("%v calls=%d %q %q", err, calls, out, stderr)
+	}
+}
+
+func wireConditions(value string) []any {
+	return []any{map[string]any{"key": "name", "operator": "In", "values": []any{value}}}
+}
+func encodedCondition(t *testing.T, value string) string {
+	t.Helper()
+	b, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("encoding condition: %v", err)
+	}
+	return "name In [" + string(b) + "]"
+}
+func formattedName(t *testing.T, value string) string {
+	t.Helper()
+	b, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("encoding condition: %v", err)
+	}
+	return "name In [" + string(b) + "]"
+}
+
+func TestConditionFlagValidationAndFalse(t *testing.T) {
+	for _, flags := range [][]string{{"--condition", ""}, {"--condition", `name In ["x"]`, "--condition", `region In []`}, {"--clear-conditions=false"}, {"--condition", `name In ["x"]`, "--clear-conditions=false"}} {
+		calls := 0
+		_, _, err := executeBinding(t, func(http.ResponseWriter, *http.Request) { calls++ }, append([]string{"update", "grant"}, flags...)...)
+		if err == nil || calls != 0 {
+			t.Fatalf("%v: %v calls=%d", flags, err, calls)
+		}
+	}
+	calls := 0
+	_, _, err := executeBinding(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decoding request: %v", err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
+		}
+		if _, ok := body["spec"].(map[string]any)["conditions"]; ok {
+			t.Fatal("false cleared conditions")
+		}
+		response(w, obj(map[string]any{"subject": "a@b", "roleRef": map[string]any{"kind": "Role", "name": "r"}}))
+	}, "update", "grant", "--subject", "a@b", "--clear-conditions=false")
+	if err != nil || calls != 1 {
+		t.Fatalf("%v %d", err, calls)
+	}
+	calls = 0
+	_, _, err = executeBinding(t, func(http.ResponseWriter, *http.Request) { calls++ }, "create", "grant", "--clear-conditions")
+	if err == nil || calls != 0 {
+		t.Fatal("create accepted clear")
+	}
+}
+
+func TestRepeatedConditionWire(t *testing.T) {
+	args := []string{"create", "grant", "--subject", "a@b", "--role", "r", "--condition", `region In ["a", "b*", "a"]`, "--condition", `name NotIn ["AND OR"]`, "--condition", `region In [" x "]`}
+	calls := 0
+	_, _, err := executeBinding(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decoding request: %v", err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
+		}
+		spec := body["spec"].(map[string]any)
+		if _, ok := spec["condition"]; ok {
+			t.Fatal("raw field")
+		}
+		b, err := json.Marshal(spec["conditions"])
+		if err != nil {
+			t.Errorf("encoding conditions: %v", err)
+			http.Error(w, "invalid test conditions", http.StatusInternalServerError)
+			return
+		}
+		if string(b) != `[{"key":"region","operator":"In","values":["a","b*","a"]},{"key":"name","operator":"NotIn","values":["AND OR"]},{"key":"region","operator":"In","values":[" x "]}]` {
+			t.Fatalf("%s", b)
+		}
+		response(w, body)
+	}, args...)
+	if err != nil || calls != 1 {
+		t.Fatalf("%v %d", err, calls)
 	}
 }
