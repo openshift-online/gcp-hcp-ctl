@@ -136,8 +136,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/openshift-online/gecko/orlop v0.0.0-20261102151815-4226e705b068 h1:i3NFr9npSlzcs6Av5/YHwZmhff7CN1++dwTK8XKk0Bc=
 github.com/openshift-online/gecko/orlop v0.0.0-20261102151815-4226e705b068/go.mod h1:6y9h+A3/Z8qVz3YbeRGxZou2KVtreXRq7kTG/ug2jcY=
-github.com/openshift-online/gecko/platform-api v0.0.0-20261124175912-1659ced8a51b h1:FJfV4wtltplBvmvcKcUizPH/BH8ovAaqifoUvEgvCPg=
-github.com/openshift-online/gecko/platform-api v0.0.0-20261124175912-1659ced8a51b/go.mod h1:sejyBAcJWjj/MnTc9cDRmgLd/ny/QCJxc29qJlLOLJQ=
+github.com/openshift-online/gecko/platform-api v0.0.0-20261125201924-abca6512a5ec h1:pWj8qGxz6xKzE64v5MLvY7Ip5zT555ErR5obDvslVYs=
+github.com/openshift-online/gecko/platform-api v0.0.0-20261125201924-abca6512a5ec/go.mod h1:PP3S/of+lxIdR9KorfYUjpZD/R5HomqmCQrsmtotV5M=
 github.com/pandatix/go-abnf v0.5.5 h1:EXex5KkRQx4Dm6GnpAcQnIMBs9KiK0uf8p/wq+4t9PM=
 github.com/pandatix/go-abnf v0.5.5/go.mod h1:AE0KD3/VNoCjGzc1gqetRKshbI4SYErXQ/8kPenR5mc=
 github.com/planetscale/vtprotobuf v0.6.1-0.20260702190614-8ae5a48058df h1:x2ymdov8jnZLDPfI+VVcf/ZvzuZ2u36ieXTuQASMkWI=
@@ -277,8 +277,8 @@ k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab h1:pjQrNLaF//ytZtWwCAHtW+pqwSKjt
 k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab/go.mod h1:DdQ0BJxlQtuMlKDqdg7X5IMMQCXIk2b3d1/4M9OhUYo=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.37.0 h1:NWrO5vJ1Dw7gy2JS/iY98JEEvtmQ3lXqNwwCzzOC1gk=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.37.0/go.mod h1:x/fWe7nc0XDKUqK5XZ5nqmWKdQxvouWB7OmEAsxltiI=
-sigs.k8s.io/controller-runtime v0.25.2 h1:bEkK3PVOIVK9X8QWLGVhJgmFc++47vfT6wakSzAOLsQ=
-sigs.k8s.io/controller-runtime v0.25.2/go.mod h1:4QqLdT6z/L6Olj8JJCtvztid4/fnIiYsfaTFScegctc=
+sigs.k8s.io/controller-runtime v0.25.3 h1:b4OcZSY/aKHY8JG+rBlQmQ1xLs574+ZBEjv1dtfLd80=
+sigs.k8s.io/controller-runtime v0.25.3/go.mod h1:4QqLdT6z/L6Olj8JJCtvztid4/fnIiYsfaTFScegctc=
 sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5 h1:k9jo7ED/fsfOcz3L1P20P5tjTNtsdQNwMOG2aKzHrl8=
 sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5/go.mod h1:mdzfpAEoE6DHQEN0uh9ZbOCuHbLK5wOm7dK4ctXE9Tg=
 sigs.k8s.io/randfill v1.0.0 h1:JfjMILfT8A6RbawdsK2JXGBR5AQVfd+9TbzrlneTyrU=
