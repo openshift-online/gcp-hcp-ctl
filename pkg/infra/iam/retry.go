@@ -86,6 +86,11 @@ func isTransientIAMError(err error) bool {
 	switch apiErr.Code {
 	case 404:
 		return true
+	case 409:
+		// GCP returns 409 when a project or service-account IAM policy changed
+		// between the read and the write. Two clusters provisioned into the same
+		// project reproduce this, so the read-modify-write must be retried.
+		return containsAny(apiErr.Message, "concurrent policy changes", "aborted", "please retry")
 	case 429:
 		return true
 	case 400:

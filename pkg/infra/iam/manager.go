@@ -113,6 +113,8 @@ type iamClient interface {
 	DeleteServiceAccount(ctx context.Context, resource string) error
 	AddProjectIAMRoles(ctx context.Context, member string, roles []string) ([]string, error)
 	RemoveProjectIAMRoles(ctx context.Context, member string, roles []string) ([]string, error)
+	AddProjectRoleGrants(ctx context.Context, grants []gcpiam.ProjectRoleGrant) (map[string][]string, error)
+	RemoveProjectRoleGrants(ctx context.Context, grants []gcpiam.ProjectRoleGrant) (map[string][]string, error)
 	AddServiceAccountIAMRoles(ctx context.Context, resource, member string, roles []string) ([]string, error)
 }
 
@@ -375,16 +377,32 @@ func (m *Manager) CreateServiceAccounts(ctx context.Context) (map[string]string,
 			return nil, fmt.Errorf("failed to create service account %s: %w", def.Name, err)
 		}
 		serviceAccountEmails[def.Name] = email
+	}
 
-		if len(def.Roles) > 0 {
-			err := retryWithBackoff(ctx, m.logger, fmt.Sprintf("assignRoles-%s", def.Name), func() error {
-				return m.assignRoles(ctx, email, def.Roles)
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to assign roles to %s: %w", def.Name, err)
-			}
+	// Grant every project role in a single read-modify-write of the project IAM
+	// policy. The policy is one project-scoped document, so granting per account
+	// multiplies the ETag conflicts when two clusters are created concurrently.
+	grants := make([]gcpiam.ProjectRoleGrant, 0, len(definitions))
+	for _, def := range definitions {
+		if len(def.Roles) == 0 {
+			continue
 		}
+		grants = append(grants, gcpiam.ProjectRoleGrant{
+			Member: m.formatServiceAccountMember(serviceAccountEmails[def.Name]),
+			Roles:  def.Roles,
+		})
+	}
+	if len(grants) > 0 {
+		err := retryWithBackoff(ctx, m.logger, "assignRoleGrants", func() error {
+			return m.assignRoleGrants(ctx, grants)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to assign project roles: %w", err)
+		}
+	}
 
+	for _, def := range definitions {
+		email := serviceAccountEmails[def.Name]
 		for i, k8sSA := range def.K8sServiceAccounts {
 			err := retryWithBackoff(ctx, m.logger, fmt.Sprintf("createWIFBinding-%s-%d", def.Name, i), func() error {
 				return m.createWorkloadIdentityBinding(ctx, email, &k8sSA)
@@ -424,23 +442,24 @@ func (m *Manager) createServiceAccount(ctx context.Context, def ServiceAccountDe
 	return email, nil
 }
 
-func (m *Manager) assignRoles(ctx context.Context, serviceAccountEmail string, roles []string) error {
-	if len(roles) == 0 {
+func (m *Manager) assignRoleGrants(ctx context.Context, grants []gcpiam.ProjectRoleGrant) error {
+	if len(grants) == 0 {
 		return nil
 	}
 
-	member := m.formatServiceAccountMember(serviceAccountEmail)
-	m.logger.V(1).Info("Assigning project IAM roles", "member", member, "roles", roles)
+	m.logger.V(1).Info("Assigning project IAM roles", "members", len(grants))
 
-	added, err := m.client.AddProjectIAMRoles(ctx, member, roles)
+	added, err := m.client.AddProjectRoleGrants(ctx, grants)
 	if err != nil {
 		return fmt.Errorf("failed to assign roles: %w", err)
 	}
 
-	if len(added) > 0 {
-		m.logger.V(1).Info("Added project IAM role bindings", "member", member, "added", added)
-	} else {
-		m.logger.V(1).Info("All role bindings already exist", "member", member)
+	for _, grant := range grants {
+		if len(added[grant.Member]) > 0 {
+			m.logger.V(1).Info("Added project IAM role bindings", "member", grant.Member, "added", added[grant.Member])
+		} else {
+			m.logger.V(1).Info("All role bindings already exist", "member", grant.Member)
+		}
 	}
 	return nil
 }
@@ -523,19 +542,30 @@ func (m *Manager) DeleteServiceAccounts(ctx context.Context) error {
 
 	var deleteErrors []error
 
+	// Remove every project role binding in one policy update before deleting the
+	// accounts. One update instead of one per account avoids an ETag conflict per
+	// account when several teardowns run in the same project.
+	grants := make([]gcpiam.ProjectRoleGrant, 0, len(definitions))
+	for _, def := range definitions {
+		if len(def.Roles) == 0 {
+			continue
+		}
+		grants = append(grants, gcpiam.ProjectRoleGrant{
+			Member: m.formatServiceAccountMember(m.formatServiceAccountEmail(def.Name)),
+			Roles:  def.Roles,
+		})
+	}
+	if len(grants) > 0 {
+		if err := retryWithBackoff(ctx, m.logger, "removeRoleGrants", func() error {
+			return m.removeRoleGrants(ctx, grants)
+		}); err != nil {
+			deleteErrors = append(deleteErrors, fmt.Errorf("failed to remove project role bindings: %w", err))
+		}
+	}
+
 	for _, def := range definitions {
 		email := m.formatServiceAccountEmail(def.Name)
 		m.logger.V(1).Info("Deleting service account", "name", def.Name, "email", email)
-
-		// Remove role bindings before deleting the account so no binding is left
-		// pointing at a deleted service account. A failure here means teardown is
-		// incomplete and must be reported, but the remaining accounts still get
-		// their chance to be cleaned up.
-		if len(def.Roles) > 0 {
-			if err := m.removeRoles(ctx, email, def.Roles); err != nil {
-				deleteErrors = append(deleteErrors, fmt.Errorf("failed to remove role bindings for %s: %w", email, err))
-			}
-		}
 
 		resource := m.formatServiceAccountResource(email)
 		if err := m.client.DeleteServiceAccount(ctx, resource); err != nil {
@@ -556,23 +586,24 @@ func (m *Manager) DeleteServiceAccounts(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) removeRoles(ctx context.Context, serviceAccountEmail string, roles []string) error {
-	if len(roles) == 0 {
+func (m *Manager) removeRoleGrants(ctx context.Context, grants []gcpiam.ProjectRoleGrant) error {
+	if len(grants) == 0 {
 		return nil
 	}
 
-	member := m.formatServiceAccountMember(serviceAccountEmail)
-	m.logger.V(1).Info("Removing project IAM roles", "member", member, "roles", roles)
+	m.logger.V(1).Info("Removing project IAM roles", "members", len(grants))
 
-	removed, err := m.client.RemoveProjectIAMRoles(ctx, member, roles)
+	removed, err := m.client.RemoveProjectRoleGrants(ctx, grants)
 	if err != nil {
 		return fmt.Errorf("failed to remove roles: %w", err)
 	}
 
-	if len(removed) > 0 {
-		m.logger.V(1).Info("Removed project IAM role bindings", "member", member, "removed", removed)
-	} else {
-		m.logger.V(1).Info("No role bindings found to remove", "member", member)
+	for _, grant := range grants {
+		if len(removed[grant.Member]) > 0 {
+			m.logger.V(1).Info("Removed project IAM role bindings", "member", grant.Member, "removed", removed[grant.Member])
+		} else {
+			m.logger.V(1).Info("No role bindings found to remove", "member", grant.Member)
+		}
 	}
 	return nil
 }

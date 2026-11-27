@@ -236,52 +236,100 @@ func (c *Client) SetServiceAccountIAMPolicy(ctx context.Context, resource string
 // Compound IAM Operations
 // ============================================================================
 
-// AddProjectIAMRoles adds a member to one or more role bindings in the project IAM policy.
-// It performs get-modify-set atomically. Returns the list of roles that were actually added
-// (excludes roles the member already had).
-func (c *Client) AddProjectIAMRoles(ctx context.Context, member string, roles []string) ([]string, error) {
+// ProjectRoleGrant is one member and the project roles it should hold. Applying
+// a batch of grants uses a single read-modify-write of the project IAM policy,
+// so one `iam create` or `iam destroy` costs one policy update instead of one
+// per service account; fewer updates means fewer ETag conflicts when several
+// clusters are provisioned into the same project concurrently.
+type ProjectRoleGrant struct {
+	Member string
+	Roles  []string
+}
+
+// AddProjectRoleGrants adds every grant in one project IAM policy update.
+// Returns the roles that were actually added, keyed by member.
+func (c *Client) AddProjectRoleGrants(ctx context.Context, grants []ProjectRoleGrant) (map[string][]string, error) {
+	added := make(map[string][]string, len(grants))
+	if len(grants) == 0 {
+		return added, nil
+	}
+
 	policy, err := c.GetProjectIAMPolicy(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting project IAM policy: %w", err)
 	}
 
-	var added []string
-	for _, role := range roles {
-		if AddProjectPolicyMember(policy, role, member) {
-			added = append(added, role)
+	changed := false
+	for _, grant := range grants {
+		for _, role := range grant.Roles {
+			if AddProjectPolicyMember(policy, role, grant.Member) {
+				added[grant.Member] = append(added[grant.Member], role)
+				changed = true
+			}
 		}
 	}
 
-	if len(added) > 0 {
-		if err := c.SetProjectIAMPolicy(ctx, policy); err != nil {
-			return nil, fmt.Errorf("setting project IAM policy: %w", err)
-		}
+	if !changed {
+		return added, nil
+	}
+	if err := c.SetProjectIAMPolicy(ctx, policy); err != nil {
+		return nil, fmt.Errorf("setting project IAM policy: %w", err)
 	}
 	return added, nil
+}
+
+// RemoveProjectRoleGrants removes every grant in one project IAM policy update.
+// Returns the roles that were actually removed, keyed by member.
+func (c *Client) RemoveProjectRoleGrants(ctx context.Context, grants []ProjectRoleGrant) (map[string][]string, error) {
+	removed := make(map[string][]string, len(grants))
+	if len(grants) == 0 {
+		return removed, nil
+	}
+
+	policy, err := c.GetProjectIAMPolicy(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting project IAM policy: %w", err)
+	}
+
+	changed := false
+	for _, grant := range grants {
+		for _, role := range grant.Roles {
+			if RemoveProjectPolicyMember(policy, role, grant.Member) {
+				removed[grant.Member] = append(removed[grant.Member], role)
+				changed = true
+			}
+		}
+	}
+
+	if !changed {
+		return removed, nil
+	}
+	if err := c.SetProjectIAMPolicy(ctx, policy); err != nil {
+		return nil, fmt.Errorf("setting project IAM policy: %w", err)
+	}
+	return removed, nil
+}
+
+// AddProjectIAMRoles adds a member to one or more role bindings in the project IAM policy.
+// It performs get-modify-set atomically. Returns the list of roles that were actually added
+// (excludes roles the member already had).
+func (c *Client) AddProjectIAMRoles(ctx context.Context, member string, roles []string) ([]string, error) {
+	added, err := c.AddProjectRoleGrants(ctx, []ProjectRoleGrant{{Member: member, Roles: roles}})
+	if err != nil {
+		return nil, err
+	}
+	return added[member], nil
 }
 
 // RemoveProjectIAMRoles removes a member from one or more role bindings in the project IAM policy.
 // It performs get-modify-set atomically. Returns the list of roles that were actually removed
 // (excludes roles the member didn't have).
 func (c *Client) RemoveProjectIAMRoles(ctx context.Context, member string, roles []string) ([]string, error) {
-	policy, err := c.GetProjectIAMPolicy(ctx)
+	removed, err := c.RemoveProjectRoleGrants(ctx, []ProjectRoleGrant{{Member: member, Roles: roles}})
 	if err != nil {
-		return nil, fmt.Errorf("getting project IAM policy: %w", err)
+		return nil, err
 	}
-
-	var removed []string
-	for _, role := range roles {
-		if RemoveProjectPolicyMember(policy, role, member) {
-			removed = append(removed, role)
-		}
-	}
-
-	if len(removed) > 0 {
-		if err := c.SetProjectIAMPolicy(ctx, policy); err != nil {
-			return nil, fmt.Errorf("setting project IAM policy: %w", err)
-		}
-	}
-	return removed, nil
+	return removed[member], nil
 }
 
 // AddServiceAccountIAMRoles adds a member to one or more role bindings on a service account.
