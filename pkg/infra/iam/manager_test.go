@@ -534,6 +534,16 @@ func TestIsTransientIAMError(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "When error is a 409 concurrent policy change it should return true",
+			err:      &googleapi.Error{Code: 409, Message: "There were concurrent policy changes. Please retry the whole read-modify-write with exponential backoff."},
+			expected: true,
+		},
+		{
+			name:     "When error is a 409 already exists it should return false",
+			err:      &googleapi.Error{Code: 409, Message: "Already exists"},
+			expected: false,
+		},
+		{
 			name:     "When error is a 500 server error it should return false",
 			err:      &googleapi.Error{Code: 500, Message: "Internal server error"},
 			expected: false,
@@ -777,6 +787,8 @@ type fakeIAMClient struct {
 	addedRoleMembers       map[string][]string
 	wifBindings            map[string][]string
 	createServiceAccountID string
+	addRoleGrantsCalls     int
+	removeRoleGrantsCalls  int
 
 	removeRolesErr error
 	deleteSAErr    func(resource string) error
@@ -865,6 +877,29 @@ func (f *fakeIAMClient) RemoveProjectIAMRoles(_ context.Context, member string, 
 	}
 	f.removedRoleMembers[member] = append(f.removedRoleMembers[member], roles...)
 	return roles, nil
+}
+
+func (f *fakeIAMClient) AddProjectRoleGrants(_ context.Context, grants []gcpiam.ProjectRoleGrant) (map[string][]string, error) {
+	f.addRoleGrantsCalls++
+	added := make(map[string][]string, len(grants))
+	for _, g := range grants {
+		f.addedRoleMembers[g.Member] = append(f.addedRoleMembers[g.Member], g.Roles...)
+		added[g.Member] = append(added[g.Member], g.Roles...)
+	}
+	return added, nil
+}
+
+func (f *fakeIAMClient) RemoveProjectRoleGrants(_ context.Context, grants []gcpiam.ProjectRoleGrant) (map[string][]string, error) {
+	f.removeRoleGrantsCalls++
+	if f.removeRolesErr != nil {
+		return nil, f.removeRolesErr
+	}
+	removed := make(map[string][]string, len(grants))
+	for _, g := range grants {
+		f.removedRoleMembers[g.Member] = append(f.removedRoleMembers[g.Member], g.Roles...)
+		removed[g.Member] = append(removed[g.Member], g.Roles...)
+	}
+	return removed, nil
 }
 
 func (f *fakeIAMClient) AddServiceAccountIAMRoles(_ context.Context, resource, member string, roles []string) ([]string, error) {
@@ -977,11 +1012,35 @@ func TestDeleteServiceAccounts(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected a teardown error when role removal fails")
 		}
-		if !strings.Contains(err.Error(), "failed to remove role bindings") {
+		if !strings.Contains(err.Error(), "failed to remove project role bindings") {
 			t.Errorf("expected a role-binding error, got %v", err)
 		}
 		if len(client.deletedServiceAccounts) != 7 {
 			t.Errorf("expected accounts to still be deleted, got %d deletions", len(client.deletedServiceAccounts))
 		}
 	})
+}
+
+func TestProjectRoleGrantsAreBatched(t *testing.T) {
+	client := newFakeIAMClient()
+	if _, err := newTestManager(client, true).CreateServiceAccounts(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if client.addRoleGrantsCalls != 1 {
+		t.Fatalf("expected one project IAM policy write for all accounts, got %d", client.addRoleGrantsCalls)
+	}
+	if len(client.addedRoleMembers) != 7 {
+		t.Fatalf("expected grants for 7 accounts, got %d", len(client.addedRoleMembers))
+	}
+
+	destroyClient := newFakeIAMClient()
+	if err := newTestManager(destroyClient, true).DeleteServiceAccounts(context.Background()); err != nil {
+		t.Fatalf("unexpected destroy error: %v", err)
+	}
+	if destroyClient.removeRoleGrantsCalls != 1 {
+		t.Fatalf("expected one project IAM policy write for all removals, got %d", destroyClient.removeRoleGrantsCalls)
+	}
+	if len(destroyClient.removedRoleMembers) != 7 {
+		t.Fatalf("expected removals for 7 accounts, got %d", len(destroyClient.removedRoleMembers))
+	}
 }

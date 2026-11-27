@@ -168,7 +168,7 @@ func TestDestroyIAM(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error when role removal fails")
 		}
-		if !strings.Contains(err.Error(), "failed to remove role bindings") {
+		if !strings.Contains(err.Error(), "failed to remove project role bindings") {
 			t.Errorf("expected the role-binding failure to be reported, got %v", err)
 		}
 		if len(client.deletedProviders) != 1 {
