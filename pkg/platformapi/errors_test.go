@@ -112,7 +112,7 @@ func TestFollowerWriteGuardStatus(t *testing.T) {
 		Code:     http.StatusMethodNotAllowed,
 		Message:  `region "us-east4" is a replication follower and does not accept writes to RoleBinding resources; send writes to the leader region "us-central1"`,
 	}
-	const want = "request reached a read-only region; check the selected API endpoint and routing"
+	const want = "write request rejected by a read-only region"
 	if got := displayMessage(http.StatusMethodNotAllowed, status, nil); got != want {
 		t.Errorf("follower write rejection = %q, want %q", got, want)
 	}
