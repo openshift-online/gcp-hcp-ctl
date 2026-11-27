@@ -11,7 +11,7 @@ import (
 
 const (
 	maxClassifiedBodyBytes = 64 * 1024
-	readOnlyRegionLabel    = "this region is read-only for this resource; send writes to the leader region"
+	readOnlyRegionLabel    = "request reached a read-only region; check the selected API endpoint and routing"
 )
 
 // reasonLabels is intentionally a closed allowlist; StatusReason is a string
