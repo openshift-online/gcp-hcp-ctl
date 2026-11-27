@@ -515,16 +515,8 @@ gcphcpctl regions list --env integration
 gcphcpctl regions list --env <infra-id>.dev
 ```
 
-The regional manifest URL is
-`https://discovery.{env}.gcp-hcp.devshift.net/v1/regions.json`, and every
-endpoint it advertises must be HTTPS under `gcp-hcp.devshift.net`.
-Role and RoleBinding commands also check
-`https://discovery.{env}.gcp-hcp.devshift.net/v2/endpoints.json`. When it
-advertises `global.authorization_endpoint`, they send reads and writes to that
-stable URL, even without `--region`. If the v2 artifact is absent or omits the
-global endpoint, they use the selected region's API endpoint. Other commands
-continue to use regional discovery. An explicit `--api-endpoint`, environment
-variable, or config value overrides authorization discovery as well.
+The manifest URL is always `https://discovery.{env}.gcp-hcp.devshift.net/v1/regions.json`,
+and every endpoint it advertises must be HTTPS under `gcp-hcp.devshift.net`.
 
 **Precedence:** explicit endpoint flags, environment variables, and config values
 win over discovery, in that order. Missing endpoints are discovered from
@@ -872,9 +864,8 @@ Lists aggregate up to 100 pages. Repeated continuation tokens or a catalog
 requiring more pages return an error without partial output.
 
 An explicit API endpoint from flag/environment/config overrides discovery and
-works without an OIDC issuer or a discovery request. Otherwise `--env` uses
-the stable authorization endpoint from v2 discovery when available. When it
-is not advertised, `--env` and `--region` select the regional API endpoint.
+works without an OIDC issuer or a discovery request. Otherwise `--env` and
+`--region` resolve the API endpoint through the normal discovery manifest.
 List text shows NAME, PERMISSIONS (count), and AGE; get text shows every
 permission. JSON/YAML retain the public Kubernetes resource shape and full
 permissions, but item metadata is minimized to name and creation timestamp
