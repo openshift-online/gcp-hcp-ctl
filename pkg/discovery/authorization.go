@@ -42,7 +42,7 @@ func ManifestV2URL(environment string) (string, error) {
 }
 
 // HTTPStatusError keeps a missing v2 artifact distinguishable from a failed
-// fetch or malformed manifest. Only HTTP 404 permits the v1 compatibility path.
+// fetch or malformed manifest.
 type HTTPStatusError struct {
 	URL        string
 	StatusCode int
@@ -107,15 +107,15 @@ func validateAuthorizationEndpoint(endpoint string) error {
 	return nil
 }
 
-// Authorization selects the stable endpoint when advertised, or the selected
-// region's API endpoint while an environment still publishes v1 or omits the
-// global field. Explicit API endpoint configuration always takes precedence.
+// Authorization selects the stable endpoint when advertised. A missing v2
+// artifact or global field fails closed for Role and RoleBinding requests;
+// explicit API endpoint configuration always takes precedence.
 func (resolver *Resolver) Authorization(ctx context.Context, cfg *config.Config) (AuthorizationInfo, error) {
 	if cfg.APIEndpoint != "" {
 		return AuthorizationInfo{Endpoint: cfg.APIEndpoint}, nil
 	}
 	if cfg.Environment == "" {
-		return AuthorizationInfo{}, nil
+		return AuthorizationInfo{}, fmt.Errorf("global authorization endpoint discovery requires --env or an explicit --api-endpoint")
 	}
 	v2URL, err := ManifestV2URL(cfg.Environment)
 	if err != nil {
@@ -125,17 +125,7 @@ func (resolver *Resolver) Authorization(ctx context.Context, cfg *config.Config)
 	if err != nil {
 		var statusErr *HTTPStatusError
 		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
-			if cfg.Region == "" {
-				return AuthorizationInfo{}, nil
-			}
-			info, regionErr := resolver.Region(ctx, cfg)
-			if regionErr != nil {
-				return AuthorizationInfo{}, regionErr
-			}
-			if info.PlatformAPIEndpoint == "" {
-				return AuthorizationInfo{}, missingRegionalAPIEndpoint(cfg)
-			}
-			return AuthorizationInfo{Endpoint: info.PlatformAPIEndpoint}, nil
+			return AuthorizationInfo{}, globalAuthorizationUnavailable(cfg.Environment)
 		}
 		var dnsErr *net.DNSError
 		if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
@@ -149,21 +139,11 @@ func (resolver *Resolver) Authorization(ctx context.Context, cfg *config.Config)
 	if manifest.Global.AuthorizationEndpoint != "" {
 		return AuthorizationInfo{Endpoint: manifest.Global.AuthorizationEndpoint}, nil
 	}
-	if cfg.Region == "" {
-		return AuthorizationInfo{}, nil
-	}
-	entry, found := manifest.Regions[cfg.Region]
-	if !found {
-		return AuthorizationInfo{}, fmt.Errorf("region %q is not available in env %q; run 'gcphcpctl regions list --env %s' to see available regions", cfg.Region, cfg.Environment, cfg.Environment)
-	}
-	if entry.PlatformAPIEndpoint == "" {
-		return AuthorizationInfo{}, missingRegionalAPIEndpoint(cfg)
-	}
-	return AuthorizationInfo{Endpoint: entry.PlatformAPIEndpoint}, nil
+	return AuthorizationInfo{}, globalAuthorizationUnavailable(cfg.Environment)
 }
 
-func missingRegionalAPIEndpoint(cfg *config.Config) error {
-	return fmt.Errorf("region %q in env %q has no platform_api_endpoint in discovery; check the manifest or set --api-endpoint", cfg.Region, cfg.Environment)
+func globalAuthorizationUnavailable(environment string) error {
+	return fmt.Errorf("global authorization endpoint is not configured for env %q; check v2 discovery or set an explicit --api-endpoint", environment)
 }
 
 func (resolver *Resolver) cachedManifestV2(ctx context.Context, manifestURL string) (*ManifestV2, error) {

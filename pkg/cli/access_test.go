@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,11 +19,16 @@ import (
 )
 
 type staticAuthorizationResolver struct {
-	info discovery.AuthorizationInfo
+	info       discovery.AuthorizationInfo
+	err        error
+	seenRegion *string
 }
 
-func (resolver staticAuthorizationResolver) Authorization(_ context.Context, _ *config.Config) (discovery.AuthorizationInfo, error) {
-	return resolver.info, nil
+func (resolver staticAuthorizationResolver) Authorization(_ context.Context, cfg *config.Config) (discovery.AuthorizationInfo, error) {
+	if resolver.seenRegion != nil {
+		*resolver.seenRegion = cfg.Region
+	}
+	return resolver.info, resolver.err
 }
 
 func TestAccessCommandDiscovery(t *testing.T) {
@@ -89,15 +95,38 @@ func TestAccessResolvedConfiguration(t *testing.T) {
 	}
 }
 
-func TestAccessEndpointDiscoveryRequiresRegion(t *testing.T) {
+func TestAccessUnavailableGlobalEndpointDoesNotSendRequest(t *testing.T) {
 	t.Setenv("GCPHCPCTL_API_ENDPOINT", "")
 	t.Setenv("GCPHCPCTL_REGION", "")
-	root := newRootCmd()
-	root.SetContext(access.WithResolver(context.Background(), staticAuthorizationResolver{}))
-	root.SetArgs([]string{"role", "list", "--project", "customer", "--env", "int", "--config", filepath.Join(t.TempDir(), "missing.yaml")})
-	err := root.Execute()
-	if err == nil || !strings.Contains(err.Error(), "--region is required for endpoint discovery") {
-		t.Fatalf("expected missing region error, got %v", err)
+	t.Setenv("GCPHCPCTL_ENVIRONMENT", "")
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("project: customer\nregion: us-east4\nenvironment: integration\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("Role or RoleBinding request was sent without a global authorization endpoint")
+	}))
+	defer server.Close()
+	client, err := platformapi.NewClientForTest(server.URL, "customer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range []string{"role", "rolebinding"} {
+		t.Run(group, func(t *testing.T) {
+			unavailable := errors.New("global authorization endpoint is not configured")
+			seenRegion := ""
+			resolver := staticAuthorizationResolver{err: unavailable, seenRegion: &seenRegion}
+			ctx := access.WithClient(access.WithResolver(context.Background(), resolver), client)
+			root := newRootCmd()
+			root.SetContext(ctx)
+			root.SetArgs([]string{group, "list", "--config", configPath})
+			if err := root.Execute(); !errors.Is(err, unavailable) {
+				t.Fatalf("expected global authorization error, got %v", err)
+			}
+			if seenRegion != "us-east4" {
+				t.Fatalf("expected inherited region, got %q", seenRegion)
+			}
+		})
 	}
 }
 

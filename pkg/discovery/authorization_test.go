@@ -90,38 +90,38 @@ func TestAuthorizationResolution(t *testing.T) {
 	if len(overrideFetcher.callsByURL) != 0 {
 		t.Fatalf("explicit endpoint still fetched discovery: %v", overrideFetcher.callsByURL)
 	}
-
-	delete(fetcher.v2ByURL, v2URL)
-	resolver = newResolver(fetcher)
-	regional, err := resolver.Authorization(ctx, &config.Config{Environment: "integration", Region: "us-central1"})
-	if err != nil || regional.Endpoint != "https://api-c1.int.gcp-hcp.devshift.net" {
-		t.Fatalf("v1 fallback: %+v, %v", regional, err)
-	}
-	if calls := fetcher.callsByURL[v1URL]; calls != 1 {
-		t.Fatalf("expected one v1 fetch, got %d", calls)
-	}
-	missingRegion, err := resolver.Authorization(ctx, &config.Config{Environment: "integration"})
-	if err != nil || missingRegion.Endpoint != "" {
-		t.Fatalf("missing region: %+v, %v", missingRegion, err)
+	withoutEnv, err := newResolver(overrideFetcher).Authorization(ctx, &config.Config{Region: "us-central1"})
+	if withoutEnv.Endpoint != "" || err == nil || !strings.Contains(err.Error(), "--env") {
+		t.Fatalf("missing environment: %+v, %v", withoutEnv, err)
 	}
 
-	fetcher.v2ByURL[v2URL] = &ManifestV2{SchemaVersion: 2, Regions: map[string]RegionInfo{
-		"us-central1": {PlatformAPIEndpoint: "https://api-c1.int.gcp-hcp.devshift.net"},
-	}}
-	resolver = newResolver(fetcher)
-	regional, err = resolver.Authorization(ctx, &config.Config{Environment: "integration", Region: "us-central1"})
-	if err != nil || regional.Endpoint != "https://api-c1.int.gcp-hcp.devshift.net" {
-		t.Fatalf("v2 omitted global: %+v, %v", regional, err)
-	}
-	_, err = resolver.Authorization(ctx, &config.Config{Environment: "integration", Region: "us-east4"})
-	if err == nil || !strings.Contains(err.Error(), "region") {
-		t.Fatalf("unknown region: %v", err)
-	}
-	fetcher.v2ByURL[v2URL].Regions["us-central1"] = RegionInfo{}
-	resolver = newResolver(fetcher)
-	_, err = resolver.Authorization(ctx, &config.Config{Environment: "integration", Region: "us-central1"})
-	if err == nil || !strings.Contains(err.Error(), "no platform_api_endpoint") {
-		t.Fatalf("missing regional endpoint: %v", err)
+	for _, test := range []struct {
+		name     string
+		manifest *ManifestV2
+		region   string
+	}{
+		{name: "v2 absent without region"},
+		{name: "v2 absent with inherited follower region", region: "us-east4"},
+		{name: "global omitted without region", manifest: &ManifestV2{SchemaVersion: 2}},
+		{name: "global omitted with inherited follower region", manifest: &ManifestV2{SchemaVersion: 2, Regions: map[string]RegionInfo{
+			"us-east4": {PlatformAPIEndpoint: "https://api-e4.int.gcp-hcp.devshift.net"},
+		}}, region: "us-east4"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fetcher := &fakeFetcher{manifestsByURL: map[string]*Manifest{
+				v1URL: manifestWith("us-east4", "https://api-e4.int.gcp-hcp.devshift.net", ""),
+			}}
+			if test.manifest != nil {
+				fetcher.v2ByURL = map[string]*ManifestV2{v2URL: test.manifest}
+			}
+			info, err := newResolver(fetcher).Authorization(ctx, &config.Config{Environment: "integration", Region: test.region})
+			if info.Endpoint != "" || err == nil || !strings.Contains(err.Error(), "global authorization endpoint is not configured") {
+				t.Fatalf("expected unsupported configuration, got %+v, %v", info, err)
+			}
+			if fetcher.callsByURL[v1URL] != 0 || fetcher.callsByURL[v2URL] != 1 {
+				t.Fatalf("unexpected discovery fetches: %v", fetcher.callsByURL)
+			}
+		})
 	}
 }
 
