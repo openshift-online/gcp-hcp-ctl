@@ -11,9 +11,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/config"
+	"github.com/openshift-online/gcp-hcp-ctl/pkg/discovery"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/internal/access"
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/platformapi"
 )
+
+type staticAuthorizationResolver struct {
+	info discovery.AuthorizationInfo
+}
+
+func (resolver staticAuthorizationResolver) Authorization(_ context.Context, _ *config.Config) (discovery.AuthorizationInfo, error) {
+	return resolver.info, nil
+}
 
 func TestAccessCommandDiscovery(t *testing.T) {
 	for group, verbs := range map[string][]string{"role": {"create", "update", "list", "get", "delete"}, "rolebinding": {"create", "update", "list", "get", "delete"}} {
@@ -83,9 +93,27 @@ func TestAccessEndpointDiscoveryRequiresRegion(t *testing.T) {
 	t.Setenv("GCPHCPCTL_API_ENDPOINT", "")
 	t.Setenv("GCPHCPCTL_REGION", "")
 	root := newRootCmd()
+	root.SetContext(access.WithResolver(context.Background(), staticAuthorizationResolver{}))
 	root.SetArgs([]string{"role", "list", "--project", "customer", "--env", "int", "--config", filepath.Join(t.TempDir(), "missing.yaml")})
 	err := root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--region is required for endpoint discovery") {
 		t.Fatalf("expected missing region error, got %v", err)
+	}
+}
+
+func TestAccessGlobalEndpointWithoutRegion(t *testing.T) {
+	// An invalid URL makes client construction fail before authentication or a
+	// network request, proving that the resolved endpoint reached NewClient.
+	const stableURL = "http://authz.int.gcp-hcp.devshift.net"
+	for _, group := range []string{"role", "rolebinding"} {
+		t.Run(group, func(t *testing.T) {
+			ctx := access.WithResolver(context.Background(), staticAuthorizationResolver{info: discovery.AuthorizationInfo{Endpoint: stableURL}})
+			root := newRootCmd()
+			root.SetContext(ctx)
+			root.SetArgs([]string{group, "list", "--project", "customer", "--env", "int", "--config", filepath.Join(t.TempDir(), "missing.yaml")})
+			if err := root.Execute(); err == nil || err.Error() != "API endpoint must use HTTPS" {
+				t.Fatalf("resolved endpoint was not used without a region: %v", err)
+			}
+		})
 	}
 }

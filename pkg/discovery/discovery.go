@@ -91,6 +91,7 @@ type Manifest struct {
 // interface so tests can supply a manifest without network access.
 type Fetcher interface {
 	Fetch(ctx context.Context, manifestURL string) (*Manifest, error)
+	FetchV2(ctx context.Context, manifestURL string) (*ManifestV2, error)
 }
 
 // knownEnvLabels maps friendly environment names (and their common synonyms) to
@@ -170,6 +171,7 @@ type Resolver struct {
 
 	cacheMutex     sync.Mutex
 	manifestsByURL map[string]*Manifest
+	v2ByURL        map[string]*ManifestV2
 }
 
 // NewResolver returns a Resolver that fetches discovery manifests over HTTPS.
@@ -183,6 +185,7 @@ func newResolver(fetcher Fetcher) *Resolver {
 	return &Resolver{
 		fetcher:        fetcher,
 		manifestsByURL: make(map[string]*Manifest),
+		v2ByURL:        make(map[string]*ManifestV2),
 	}
 }
 
@@ -304,6 +307,18 @@ func NewHTTPFetcher(timeout time.Duration) *HTTPFetcher {
 
 // Fetch retrieves and parses the manifest at manifestURL.
 func (fetcher *HTTPFetcher) Fetch(ctx context.Context, manifestURL string) (*Manifest, error) {
+	body, err := fetcher.fetchBody(ctx, manifestURL)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := ParseManifest(body)
+	if err != nil {
+		return nil, fmt.Errorf("parsing discovery manifest %s: %w", manifestURL, err)
+	}
+	return manifest, nil
+}
+
+func (fetcher *HTTPFetcher) fetchBody(ctx context.Context, manifestURL string) ([]byte, error) {
 	if err := validateHTTPSURL(manifestURL); err != nil {
 		return nil, fmt.Errorf("invalid discovery manifest URL: %w", err)
 	}
@@ -319,7 +334,7 @@ func (fetcher *HTTPFetcher) Fetch(ctx context.Context, manifestURL string) (*Man
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetching discovery manifest %s: HTTP %d", manifestURL, response.StatusCode)
+		return nil, &HTTPStatusError{URL: manifestURL, StatusCode: response.StatusCode}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxManifestBytes+1))
@@ -330,11 +345,7 @@ func (fetcher *HTTPFetcher) Fetch(ctx context.Context, manifestURL string) (*Man
 		return nil, fmt.Errorf("discovery manifest %s exceeds %d bytes", manifestURL, maxManifestBytes)
 	}
 
-	manifest, err := ParseManifest(body)
-	if err != nil {
-		return nil, fmt.Errorf("parsing discovery manifest %s: %w", manifestURL, err)
-	}
-	return manifest, nil
+	return body, nil
 }
 
 // ParseManifest decodes and validates a manifest document. Every advertised

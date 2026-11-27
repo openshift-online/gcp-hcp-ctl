@@ -19,6 +19,16 @@ import (
 )
 
 type clientKey struct{}
+type resolverKey struct{}
+
+type authorizationResolver interface {
+	Authorization(context.Context, *config.Config) (discovery.AuthorizationInfo, error)
+}
+
+// WithResolver allows command tests to supply discovery without network access.
+func WithResolver(ctx context.Context, resolver authorizationResolver) context.Context {
+	return context.WithValue(ctx, resolverKey{}, resolver)
+}
 
 // WithClient injects a credential-free client for command tests.
 func WithClient(ctx context.Context, client *platformapi.Client) context.Context {
@@ -41,13 +51,17 @@ func Group(name, short string) *cobra.Command {
 		if strings.TrimSpace(project) == "" {
 			return fmt.Errorf("--project is required (or set GCPHCPCTL_PROJECT or project in config)")
 		}
-		info, err := discovery.NewResolver().Region(cmd.Context(), &config.Config{
-			Region: region, Environment: environment, APIEndpoint: endpoint,
+		resolver, _ := cmd.Context().Value(resolverKey{}).(authorizationResolver)
+		if resolver == nil {
+			resolver = discovery.NewResolver()
+		}
+		info, err := resolver.Authorization(cmd.Context(), &config.Config{
+			Environment: environment, Region: region, APIEndpoint: endpoint,
 		})
 		if err != nil {
 			return err
 		}
-		endpoint = info.PlatformAPIEndpoint
+		endpoint = info.Endpoint
 		if strings.TrimSpace(endpoint) == "" {
 			return discovery.EndpointRequiredError(discovery.KindAPI, environment)
 		}

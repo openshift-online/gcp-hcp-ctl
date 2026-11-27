@@ -18,6 +18,7 @@ import (
 // assert caching behavior. When a URL is missing it returns an error.
 type fakeFetcher struct {
 	manifestsByURL map[string]*Manifest
+	v2ByURL        map[string]*ManifestV2
 	callsByURL     map[string]int
 	err            error
 }
@@ -33,6 +34,21 @@ func (fetcher *fakeFetcher) Fetch(_ context.Context, manifestURL string) (*Manif
 	manifest, ok := fetcher.manifestsByURL[manifestURL]
 	if !ok {
 		return nil, fmt.Errorf("no manifest for %s", manifestURL)
+	}
+	return manifest, nil
+}
+
+func (fetcher *fakeFetcher) FetchV2(_ context.Context, manifestURL string) (*ManifestV2, error) {
+	if fetcher.callsByURL == nil {
+		fetcher.callsByURL = map[string]int{}
+	}
+	fetcher.callsByURL[manifestURL]++
+	if fetcher.err != nil {
+		return nil, fetcher.err
+	}
+	manifest, ok := fetcher.v2ByURL[manifestURL]
+	if !ok {
+		return nil, &HTTPStatusError{URL: manifestURL, StatusCode: http.StatusNotFound}
 	}
 	return manifest, nil
 }
@@ -188,6 +204,8 @@ func TestHTTPFetcher(t *testing.T) {
 		switch r.URL.Path {
 		case "/valid":
 			fmt.Fprint(w, `{"schema_version":"v1","environment":"integration","regions":{"us-central1":{"oidc_issuer":"https://oidc.int.gcp-hcp.devshift.net","platform_api_endpoint":"https://api.int.gcp-hcp.devshift.net"}}}`)
+		case "/valid-v2":
+			fmt.Fprint(w, `{"schemaVersion":2,"environment":"integration","global":{"authorization_endpoint":"https://authz.int.gcp-hcp.devshift.net"},"regions":{}}`)
 		case "/large":
 			fmt.Fprint(w, strings.Repeat("x", maxManifestBytes+1))
 		case "/redirect":
@@ -202,6 +220,17 @@ func TestHTTPFetcher(t *testing.T) {
 	fetcher.httpClient.Transport = server.Client().Transport
 	if _, err := fetcher.Fetch(context.Background(), server.URL+"/valid"); err != nil {
 		t.Fatalf("valid HTTPS manifest: %v", err)
+	}
+	if _, err := fetcher.FetchV2(context.Background(), server.URL+"/valid-v2"); err != nil {
+		t.Fatalf("valid HTTPS v2 manifest: %v", err)
+	}
+	if _, err := fetcher.FetchV2(context.Background(), server.URL+"/missing"); err == nil {
+		t.Fatal("expected missing v2 manifest error")
+	} else {
+		var statusErr *HTTPStatusError
+		if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusNotFound {
+			t.Fatalf("expected typed 404, got %v", err)
+		}
 	}
 	for _, target := range []string{"http://example.com/manifest", server.URL + "/large", server.URL + "/redirect"} {
 		if _, err := fetcher.Fetch(context.Background(), target); err == nil {
