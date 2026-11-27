@@ -383,15 +383,21 @@ func AddProjectPolicyMember(policy *cloudresourcemanager.Policy, role, member st
 // RemoveProjectPolicyMember removes a member from a role binding in a CRM project policy.
 // Returns true if the member was removed, false if it was not found.
 func RemoveProjectPolicyMember(policy *cloudresourcemanager.Policy, role, member string) bool {
-	for _, binding := range policy.Bindings {
-		if binding.Role == role {
-			for i, existing := range binding.Members {
-				if existing == member {
-					binding.Members[i] = binding.Members[len(binding.Members)-1]
-					binding.Members = binding.Members[:len(binding.Members)-1]
-					return true
-				}
+	for i, binding := range policy.Bindings {
+		if binding.Role != role {
+			continue
+		}
+		for j, existing := range binding.Members {
+			if existing != member {
+				continue
 			}
+			binding.Members = append(binding.Members[:j], binding.Members[j+1:]...)
+			// A binding with no members is rejected by the Resource Manager API.
+			// Drop it in the same mutation so the follow-up SetIamPolicy succeeds.
+			if len(binding.Members) == 0 {
+				policy.Bindings = append(policy.Bindings[:i], policy.Bindings[i+1:]...)
+			}
+			return true
 		}
 	}
 	return false
