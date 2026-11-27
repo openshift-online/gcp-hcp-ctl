@@ -8,7 +8,7 @@ import (
 
 func TestFlattenRegions(t *testing.T) {
 	manifest := &discovery.Manifest{
-		SchemaVersion: "v1",
+		SchemaVersion: 1,
 		Environment:   "integration",
 		Regions: map[string]discovery.RegionInfo{
 			"us-east1":    {OIDCIssuer: "https://oidc-east", PlatformAPIEndpoint: "https://api-east"},
@@ -34,7 +34,7 @@ func TestFlattenRegions(t *testing.T) {
 }
 
 func TestFlattenRegionsEmpty(t *testing.T) {
-	flattened := flattenRegions(&discovery.Manifest{SchemaVersion: "v1"})
+	flattened := flattenRegions(&discovery.Manifest{SchemaVersion: 1})
 	if len(flattened) != 0 {
 		t.Errorf("expected empty slice, got %d entries", len(flattened))
 	}

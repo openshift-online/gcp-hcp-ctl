@@ -95,7 +95,7 @@ func TestAccessResolvedConfiguration(t *testing.T) {
 	}
 }
 
-func TestAccessUnavailableGlobalEndpointDoesNotSendRequest(t *testing.T) {
+func TestAccessV2WithoutGlobalEndpointDoesNotSendRequest(t *testing.T) {
 	t.Setenv("GCPHCPCTL_API_ENDPOINT", "")
 	t.Setenv("GCPHCPCTL_REGION", "")
 	t.Setenv("GCPHCPCTL_ENVIRONMENT", "")
@@ -104,7 +104,7 @@ func TestAccessUnavailableGlobalEndpointDoesNotSendRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("Role or RoleBinding request was sent without a global authorization endpoint")
+		t.Error("Role or RoleBinding request was sent despite v2 omitting the global authorization endpoint")
 	}))
 	defer server.Close()
 	client, err := platformapi.NewClientForTest(server.URL, "customer")

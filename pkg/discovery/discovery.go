@@ -1,8 +1,9 @@
-// Package discovery resolves the platform API and OIDC issuer endpoints for a
-// (environment, region) pair by fetching a static endpoint-discovery manifest
-// published per environment (see gcp-hcp-infra GCP-1147):
+// Package discovery resolves regional and global endpoints from the static
+// endpoint-discovery manifest published per environment (see gcp-hcp-infra GCP-1147):
 //
-//	https://discovery.{env}.gcp-hcp.devshift.net/v1/regions.json
+//	https://discovery.{env}.gcp-hcp.devshift.net/v2/endpoints.json
+//
+// Environments without v2 temporarily use /v1/regions.json when v2 returns 404.
 //
 // {env} is a short label: a known environment name maps to its abbreviation
 // (integration -> int), while any other value — a shared dev sector, an
@@ -33,10 +34,10 @@ import (
 	"github.com/openshift-online/gcp-hcp-ctl/pkg/httpdebug"
 )
 
-// manifestSchemaVersion is the only manifest schema version this client
-// understands. The manifest path is also versioned (/v1/regions.json), so a
-// breaking change ships as a new path plus a new value here.
-const manifestSchemaVersion = "v1"
+const (
+	manifestVersionV1 = 1
+	manifestVersionV2 = 2
+)
 
 // defaultFetchTimeout bounds a single manifest fetch. Discovery sits on the
 // cluster-create critical path, so a hung DNS/CDN lookup must fail fast rather
@@ -79,19 +80,24 @@ type RegionInfo struct {
 	PlatformAPIEndpoint string `json:"platform_api_endpoint" yaml:"platform_api_endpoint"`
 }
 
-// Manifest is the parsed endpoint-discovery document. Keys of Regions are the
-// public GCP region names (e.g. "us-central1").
+// Manifest holds endpoints from either discovery version. SchemaVersion is
+// normalized after parsing because v1 uses schema_version:"v1" and v2 uses
+// schemaVersion:2. Keys of Regions are public GCP region names.
 type Manifest struct {
-	SchemaVersion string                `json:"schema_version"`
+	SchemaVersion int                   `json:"-"`
 	Environment   string                `json:"environment"`
 	Regions       map[string]RegionInfo `json:"regions"`
+	Global        GlobalEndpoints       `json:"global"`
+}
+
+type GlobalEndpoints struct {
+	AuthorizationEndpoint string `json:"authorization_endpoint"`
 }
 
 // Fetcher retrieves and parses a discovery manifest from a URL. It is an
 // interface so tests can supply a manifest without network access.
 type Fetcher interface {
-	Fetch(ctx context.Context, manifestURL string) (*Manifest, error)
-	FetchV2(ctx context.Context, manifestURL string) (*ManifestV2, error)
+	Fetch(ctx context.Context, manifestURL string, version int) (*Manifest, error)
 }
 
 // knownEnvLabels maps friendly environment names (and their common synonyms) to
@@ -130,10 +136,8 @@ func envLabel(environment string) string {
 	return normalized
 }
 
-// ManifestURL builds the discovery manifest URL for an --env value. The
-// discoveryDomain suffix and /v1/regions.json path are fixed, so the result is
-// always an HTTPS URL for a subdomain of the trusted discovery domain.
-func ManifestURL(environment string) (string, error) {
+// manifestBaseURL validates an --env value and returns its trusted HTTPS origin.
+func manifestBaseURL(environment string) (string, error) {
 	label := envLabel(environment)
 	if label == "" {
 		return "", fmt.Errorf("env is required to build the discovery manifest URL")
@@ -141,7 +145,25 @@ func ManifestURL(environment string) (string, error) {
 	if !envLabelPattern.MatchString(label) {
 		return "", fmt.Errorf("invalid env %q: must be an environment name or a discovery subdomain label", environment)
 	}
-	return fmt.Sprintf("https://discovery.%s.%s/v1/regions.json", label, discoveryDomain), nil
+	return fmt.Sprintf("https://discovery.%s.%s", label, discoveryDomain), nil
+}
+
+// ManifestURL builds the v1 discovery URL for temporary compatibility.
+func ManifestURL(environment string) (string, error) {
+	baseURL, err := manifestBaseURL(environment)
+	if err != nil {
+		return "", err
+	}
+	return baseURL + "/v1/regions.json", nil
+}
+
+// ManifestV2URL builds the primary discovery URL for an --env value.
+func ManifestV2URL(environment string) (string, error) {
+	baseURL, err := manifestBaseURL(environment)
+	if err != nil {
+		return "", err
+	}
+	return baseURL + "/v2/endpoints.json", nil
 }
 
 // EndpointRequiredError explains how to supply the endpoint a command needs.
@@ -163,15 +185,13 @@ func EndpointRequiredError(kind Kind, environment string) error {
 	return fmt.Errorf("no endpoint available: set --env and --region for discovery (or GCPHCPCTL_ENVIRONMENT / GCPHCPCTL_REGION or config), or set an explicit endpoint via %s, %s", endpointFlag, endpointHint)
 }
 
-// Resolver resolves endpoints via endpoint discovery, caching each fetched
-// manifest so resolving both the API and OIDC endpoints for one command issues
-// at most one network request per manifest URL.
+// Resolver resolves endpoints via endpoint discovery, caching the selected
+// document so regional and global lookups share the same fetch result.
 type Resolver struct {
 	fetcher Fetcher
 
-	cacheMutex     sync.Mutex
-	manifestsByURL map[string]*Manifest
-	v2ByURL        map[string]*ManifestV2
+	cacheMutex       sync.Mutex
+	manifestsByV2URL map[string]*Manifest
 }
 
 // NewResolver returns a Resolver that fetches discovery manifests over HTTPS.
@@ -183,9 +203,8 @@ func NewResolver() *Resolver {
 // a fetcher that serves canned manifests without a network call.
 func newResolver(fetcher Fetcher) *Resolver {
 	return &Resolver{
-		fetcher:        fetcher,
-		manifestsByURL: make(map[string]*Manifest),
-		v2ByURL:        make(map[string]*ManifestV2),
+		fetcher:          fetcher,
+		manifestsByV2URL: make(map[string]*Manifest),
 	}
 }
 
@@ -223,29 +242,88 @@ func (resolver *Resolver) Region(ctx context.Context, cfg *config.Config) (Regio
 	return info, nil
 }
 
-// FetchManifest returns the full discovery manifest for an --env value. Results
-// are cached per URL, so a caller may mix FetchManifest and Region on one
-// Resolver without issuing duplicate network requests.
-func (resolver *Resolver) FetchManifest(ctx context.Context, environment string) (*Manifest, error) {
-	manifestURL, err := ManifestURL(environment)
-	if err != nil {
-		return nil, err
+// AuthorizationInfo is the API endpoint selected for Role and RoleBinding requests.
+type AuthorizationInfo struct {
+	Endpoint string
+}
+
+// Authorization selects the stable endpoint from the shared discovery manifest.
+// A present v2 artifact without the global field is a configuration error. A
+// missing v2 artifact uses v1 regional discovery during rollout. An explicit
+// API endpoint always takes precedence.
+func (resolver *Resolver) Authorization(ctx context.Context, cfg *config.Config) (AuthorizationInfo, error) {
+	if cfg.APIEndpoint != "" {
+		return AuthorizationInfo{Endpoint: cfg.APIEndpoint}, nil
 	}
-	manifest, err := resolver.cachedManifest(ctx, manifestURL)
+	if cfg.Environment == "" {
+		return AuthorizationInfo{}, fmt.Errorf("global authorization endpoint discovery requires --env or an explicit --api-endpoint")
+	}
+	manifest, err := resolver.FetchManifest(ctx, cfg.Environment)
 	if err != nil {
-		var dnsErr *net.DNSError
-		if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
-			parsedURL, _ := url.Parse(manifestURL) // ManifestURL always returns a valid URL.
-			return nil, &discoveryHostNotFoundError{
-				environment: environment,
-				host:        parsedURL.Hostname(),
-				reason:      dnsErr.Err,
-				cause:       err,
-			}
+		return AuthorizationInfo{}, err
+	}
+	if manifest.SchemaVersion == manifestVersionV2 {
+		if manifest.Global.AuthorizationEndpoint == "" {
+			return AuthorizationInfo{}, fmt.Errorf("global authorization endpoint is not configured for env %q; check v2 discovery or set an explicit --api-endpoint", cfg.Environment)
 		}
+		return AuthorizationInfo{Endpoint: manifest.Global.AuthorizationEndpoint}, nil
+	}
+	if cfg.Region == "" {
+		return AuthorizationInfo{}, fmt.Errorf("v2 discovery is not available for env %q; set --region to use v1 regional discovery or set --api-endpoint", cfg.Environment)
+	}
+	info, err := resolver.Region(ctx, cfg)
+	if err != nil {
+		return AuthorizationInfo{}, err
+	}
+	if info.PlatformAPIEndpoint == "" {
+		return AuthorizationInfo{}, fmt.Errorf("region %q in env %q has no platform_api_endpoint in v1 discovery; check the manifest or set --api-endpoint", cfg.Region, cfg.Environment)
+	}
+	return AuthorizationInfo{Endpoint: info.PlatformAPIEndpoint}, nil
+}
+
+// FetchManifest loads v2 for every discovery consumer. Only a v2 404 selects
+// v1; malformed v2, other HTTP errors, and network failures are returned.
+// Successful results, including a v1 fallback, are cached per environment URL.
+func (resolver *Resolver) FetchManifest(ctx context.Context, environment string) (*Manifest, error) {
+	v2URL, err := ManifestV2URL(environment)
+	if err != nil {
 		return nil, err
 	}
+	resolver.cacheMutex.Lock()
+	defer resolver.cacheMutex.Unlock()
+	if cached, ok := resolver.manifestsByV2URL[v2URL]; ok {
+		return cached, nil
+	}
+
+	manifest, err := resolver.fetcher.Fetch(ctx, v2URL, manifestVersionV2)
+	if err != nil {
+		var statusErr *HTTPStatusError
+		if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusNotFound {
+			return nil, formatDiscoveryError(environment, v2URL, err)
+		}
+		// Temporary compatibility while v2 is being published across environments.
+		v1URL, _ := ManifestURL(environment) // v2URL already validated the environment.
+		manifest, err = resolver.fetcher.Fetch(ctx, v1URL, manifestVersionV1)
+		if err != nil {
+			return nil, formatDiscoveryError(environment, v1URL, err)
+		}
+	}
+	resolver.manifestsByV2URL[v2URL] = manifest
 	return manifest, nil
+}
+
+func formatDiscoveryError(environment, manifestURL string, err error) error {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+		parsedURL, _ := url.Parse(manifestURL) // Manifest URLs are validated before fetching.
+		return &discoveryHostNotFoundError{
+			environment: environment,
+			host:        parsedURL.Hostname(),
+			reason:      dnsErr.Err,
+			cause:       err,
+		}
+	}
+	return err
 }
 
 // discoveryHostNotFoundError keeps the DNS cause available to callers while
@@ -267,24 +345,6 @@ func (err *discoveryHostNotFoundError) Error() string {
 
 func (err *discoveryHostNotFoundError) Unwrap() error { return err.cause }
 
-// cachedManifest returns the manifest for a URL, fetching it once and reusing
-// the result for subsequent lookups against the same URL.
-func (resolver *Resolver) cachedManifest(ctx context.Context, manifestURL string) (*Manifest, error) {
-	resolver.cacheMutex.Lock()
-	defer resolver.cacheMutex.Unlock()
-
-	if cached, ok := resolver.manifestsByURL[manifestURL]; ok {
-		return cached, nil
-	}
-
-	manifest, err := resolver.fetcher.Fetch(ctx, manifestURL)
-	if err != nil {
-		return nil, err
-	}
-	resolver.manifestsByURL[manifestURL] = manifest
-	return manifest, nil
-}
-
 // HTTPFetcher fetches a discovery manifest over HTTPS. The manifest is public
 // (unauthenticated), so no credentials are attached.
 type HTTPFetcher struct {
@@ -305,17 +365,27 @@ func NewHTTPFetcher(timeout time.Duration) *HTTPFetcher {
 	}}
 }
 
-// Fetch retrieves and parses the manifest at manifestURL.
-func (fetcher *HTTPFetcher) Fetch(ctx context.Context, manifestURL string) (*Manifest, error) {
+// Fetch retrieves a manifest and checks the schema expected at its URL.
+func (fetcher *HTTPFetcher) Fetch(ctx context.Context, manifestURL string, version int) (*Manifest, error) {
 	body, err := fetcher.fetchBody(ctx, manifestURL)
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := ParseManifest(body)
+	manifest, err := ParseManifest(body, version)
 	if err != nil {
 		return nil, fmt.Errorf("parsing discovery manifest %s: %w", manifestURL, err)
 	}
 	return manifest, nil
+}
+
+// HTTPStatusError distinguishes a missing v2 artifact from other fetch errors.
+type HTTPStatusError struct {
+	URL        string
+	StatusCode int
+}
+
+func (err *HTTPStatusError) Error() string {
+	return fmt.Sprintf("fetching discovery manifest %s: HTTP %d", err.URL, err.StatusCode)
 }
 
 func (fetcher *HTTPFetcher) fetchBody(ctx context.Context, manifestURL string) ([]byte, error) {
@@ -348,30 +418,77 @@ func (fetcher *HTTPFetcher) fetchBody(ctx context.Context, manifestURL string) (
 	return body, nil
 }
 
-// ParseManifest decodes and validates a manifest document. Every advertised
-// endpoint must be HTTPS under the trusted discovery domain, so a tampered or
-// misconfigured manifest cannot redirect the CLI to an arbitrary host.
-func ParseManifest(data []byte) (*Manifest, error) {
+// ParseManifest decodes either wire format into one Manifest. The expected
+// version comes from the URL being fetched; a mismatched document is rejected.
+// Every advertised endpoint must be HTTPS under the trusted discovery domain.
+func ParseManifest(data []byte, expectedVersion int) (*Manifest, error) {
+	var header struct {
+		V1 string `json:"schema_version"`
+		V2 int    `json:"schemaVersion"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return nil, err
+	}
+	switch expectedVersion {
+	case manifestVersionV1:
+		if header.V1 != "v1" {
+			return nil, fmt.Errorf("unsupported manifest schema_version %q (want %q)", header.V1, "v1")
+		}
+	case manifestVersionV2:
+		if header.V2 != manifestVersionV2 {
+			return nil, fmt.Errorf("unsupported discovery schemaVersion %d in v2 manifest (this CLI supports version 2; upgrade gcphcpctl or set --api-endpoint)", header.V2)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported discovery manifest version %d", expectedVersion)
+	}
 	var manifest Manifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, err
 	}
-	if manifest.SchemaVersion != manifestSchemaVersion {
-		return nil, fmt.Errorf("unsupported manifest schema_version %q (want %q)", manifest.SchemaVersion, manifestSchemaVersion)
+	manifest.SchemaVersion = expectedVersion
+	if expectedVersion == manifestVersionV2 {
+		if endpoint := manifest.Global.AuthorizationEndpoint; endpoint != "" {
+			if err := validateAuthorizationEndpoint(endpoint); err != nil {
+				return nil, fmt.Errorf("invalid global.authorization_endpoint: %w", err)
+			}
+		}
+	} else {
+		// A v1 document cannot advertise a global authorization endpoint.
+		manifest.Global = GlobalEndpoints{}
 	}
-	for region, endpoints := range manifest.Regions {
+	if err := validateRegions(manifest.Regions); err != nil {
+		return nil, err
+	}
+	return &manifest, nil
+}
+
+func validateRegions(regions map[string]RegionInfo) error {
+	for region, endpoints := range regions {
 		if endpoints.PlatformAPIEndpoint != "" {
 			if err := validateDiscoveredEndpoint(endpoints.PlatformAPIEndpoint); err != nil {
-				return nil, fmt.Errorf("region %q has invalid platform_api_endpoint: %w", region, err)
+				return fmt.Errorf("region %q has invalid platform_api_endpoint: %w", region, err)
 			}
 		}
 		if endpoints.OIDCIssuer != "" {
 			if err := validateDiscoveredEndpoint(endpoints.OIDCIssuer); err != nil {
-				return nil, fmt.Errorf("region %q has invalid oidc_issuer: %w", region, err)
+				return fmt.Errorf("region %q has invalid oidc_issuer: %w", region, err)
 			}
 		}
 	}
-	return &manifest, nil
+	return nil
+}
+
+// A global authorization endpoint is a base URL. Reject path and query values
+// before the REST client appends its API path and attaches an identity token.
+func validateAuthorizationEndpoint(endpoint string) error {
+	if err := validateDiscoveredEndpoint(endpoint); err != nil {
+		return err
+	}
+	parsed, _ := url.Parse(endpoint)
+	if (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.ForceQuery {
+		return fmt.Errorf("must not include a path or query")
+	}
+	return nil
 }
 
 // validateHTTPSURL requires a well-formed HTTPS URL with a host and no embedded
