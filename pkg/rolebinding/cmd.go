@@ -42,6 +42,22 @@ func printBinding(cmd *cobra.Command, b *gcpv1.RoleBinding) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Condition:\n--condition %s\n", conditionArgument(b.Spec.Condition))
-	return err
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), "Conditions:")
+	if err != nil {
+		return err
+	}
+	if len(b.Spec.Conditions) == 0 {
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "  None")
+		return err
+	}
+	for _, requirement := range b.Spec.Conditions {
+		formatted, err := formatCondition(requirement)
+		if err != nil {
+			return err
+		}
+		if _, err = fmt.Fprintln(cmd.OutOrStdout(), "  - "+formatted); err != nil {
+			return err
+		}
+	}
+	return nil
 }

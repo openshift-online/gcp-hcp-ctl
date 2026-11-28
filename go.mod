@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/workflows v1.22.1
 	github.com/ergochat/readline v0.1.3
 	github.com/go-logr/logr v1.4.4
-	github.com/openshift-online/gecko/platform-api v0.0.0-20261126205048-98da8e763b9b
+	github.com/openshift-online/gecko/platform-api v0.0.0-20261127134929-a7e9bd98925b
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	golang.org/x/mod v0.43.0
@@ -45,7 +45,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/openshift-online/gecko/orlop v0.0.0-20261102151815-4226e705b068 // indirect
+	github.com/openshift-online/gecko/orlop v0.0.0-20261127134929-a7e9bd98925b // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0 // indirect

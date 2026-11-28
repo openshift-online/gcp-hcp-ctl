@@ -117,14 +117,14 @@ func TestVerbosityRoleBindingCreate(t *testing.T) {
 	t.Setenv("GCPHCPCTL_VERBOSITY", "")
 	const path = "/apis/gcp.managed.openshift.io/v1/namespaces/customer/rolebindings"
 	const note = "Note: authorization changes may take a moment to propagate globally.\n"
-	condition := `context.resourcePlural == "clusters"`
+	condition := "demo*"
 	binding := &gcpv1.RoleBinding{
 		TypeMeta:   metav1.TypeMeta{APIVersion: "gcp.managed.openshift.io/v1", Kind: "RoleBinding"},
 		ObjectMeta: metav1.ObjectMeta{Name: "test-rb", Namespace: "customer"},
 		Spec: gcpv1.RoleBindingSpec{
-			Subject:   "mickeymouse@example.com",
-			Condition: &condition,
-			RoleRef:   gcpv1.RoleRef{Kind: "PlatformRole", Name: "cluster-admin", APIGroup: "gcp.managed.openshift.io"},
+			Subject:    "mickeymouse@example.com",
+			Conditions: []gcpv1.RoleBindingRequirement{{Key: "name", Operator: "In", Values: []string{condition}}},
+			RoleRef:    gcpv1.RoleRef{Kind: "PlatformRole", Name: "cluster-admin", APIGroup: "gcp.managed.openshift.io"},
 		},
 	}
 	requestJSON, err := json.Marshal(binding)
@@ -173,7 +173,7 @@ func TestVerbosityRoleBindingCreate(t *testing.T) {
 					var out, stderr bytes.Buffer
 					root.SetOut(&out)
 					root.SetErr(&stderr)
-					root.SetArgs([]string{"rolebinding", "create", "test-rb", "--subject=mickeymouse@example.com", "--platform-role=cluster-admin", "--condition=" + condition, "--project=customer", "--api-endpoint=" + server.URL, "--config", filepath.Join(t.TempDir(), "missing.yaml"), "--output=" + format, "--v=" + strconv.Itoa(level)})
+					root.SetArgs([]string{"rolebinding", "create", "test-rb", "--subject=mickeymouse@example.com", "--platform-role=cluster-admin", `--condition=name In ["demo*"]`, "--project=customer", "--api-endpoint=" + server.URL, "--config", filepath.Join(t.TempDir(), "missing.yaml"), "--output=" + format, "--v=" + strconv.Itoa(level)})
 					checkKlog := unchangedKlog(t)
 					err = root.ExecuteContext(access.WithClient(context.Background(), client))
 					checkKlog()

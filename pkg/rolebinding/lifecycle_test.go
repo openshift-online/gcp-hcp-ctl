@@ -18,7 +18,7 @@ func TestUpdateConditionLifecycleAndPlatformRoleToRole(t *testing.T) {
 		"roleRef": map[string]any{
 			"kind": "PlatformRole", "name": "cluster-viewer", "apiGroup": "gcp.managed.openshift.io",
 		},
-		"condition": `context.resourceName == "old-cluster"`,
+		"conditions": wireConditions("old-cluster"),
 	})
 	stored["metadata"].(map[string]any)["annotations"] = map[string]string{"keep": "annotation"}
 	// Round-trip once so expected nested maps have the same JSON representation
@@ -93,16 +93,18 @@ func TestUpdateConditionLifecycleAndPlatformRoleToRole(t *testing.T) {
 		flags []string
 		patch map[string]any
 	}{
+		{name: "preserve", flags: []string{"--subject", "alice@example.com"}, patch: map[string]any{"subject": "alice@example.com"}},
 		{
 			name:  "replace-condition",
-			flags: []string{"--condition", "  context.resourceName like \"greg*\" &&\n  true  "},
-			patch: map[string]any{"condition": "  context.resourceName like \"greg*\" &&\n  true  "},
+			flags: []string{"--condition", `name In ["greg*"]`},
+			patch: map[string]any{"conditions": wireConditions("greg*")},
 		},
 		{
 			name:  "clear-condition",
-			flags: []string{"--condition", ""},
-			patch: map[string]any{"condition": ""},
+			flags: []string{"--clear-conditions"},
+			patch: map[string]any{"conditions": []any{}},
 		},
+		{name: "replace-after-clear", flags: []string{"--condition", `name In ["new*"]`}, patch: map[string]any{"conditions": wireConditions("new*")}},
 		{
 			name:  "platform-role-to-custom-role",
 			flags: []string{"--role", "custom-reader"},
@@ -115,7 +117,11 @@ func TestUpdateConditionLifecycleAndPlatformRoleToRole(t *testing.T) {
 		// not accidentally skip the state needed by a later transition.
 		t.Logf("step %d: %s", i+1, step.name)
 		for key, value := range step.patch {
-			want["spec"].(map[string]any)[key] = value
+			if key == "conditions" && len(value.([]any)) == 0 {
+				delete(want["spec"].(map[string]any), key)
+			} else {
+				want["spec"].(map[string]any)[key] = value
+			}
 		}
 		args := append([]string{"update", "grant", "-o", "json"}, step.flags...)
 		out, stderr, err := executeBindingAt(t, server.URL, args...)

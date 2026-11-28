@@ -11,7 +11,10 @@ import (
 )
 
 func newUpdateCmd() *cobra.Command {
-	var subject, role, platformRole, condition string
+	var subject, role, platformRole string
+	var conditions []string
+	var parsed []gcpv1.RoleBindingRequirement
+	var clear bool
 	cmd := &cobra.Command{
 		Use: "update <name>", Short: "Update supplied fields of a RoleBinding",
 		Long: `Update the subject, role reference, or condition of an existing RoleBinding.
@@ -19,7 +22,7 @@ Only supplied fields change; omitted fields and binding identity are
 preserved. At least one update flag is required. Unlike role update's
 permission-set replacement, this is a partial update.`,
 		Example: updateExamples,
-		Args:    access.Named,
+		Args:    conditionArgs(&conditions, &parsed, true),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var patch platformapi.RoleBindingPatch
 			if cmd.Flags().Changed("subject") {
@@ -44,9 +47,13 @@ permission-set replacement, this is a partial update.`,
 				patch.RoleRef = &gcpv1.RoleRef{Kind: kind, Name: name, APIGroup: gcpv1.GroupVersion.Group}
 			}
 			if cmd.Flags().Changed("condition") {
-				patch.Condition = &condition
+				patch.Conditions = &parsed
 			}
-			if patch.Subject == nil && patch.RoleRef == nil && patch.Condition == nil {
+			if clear {
+				empty := make([]gcpv1.RoleBindingRequirement, 0)
+				patch.Conditions = &empty
+			}
+			if patch.Subject == nil && patch.RoleRef == nil && patch.Conditions == nil {
 				return fmt.Errorf("at least one update flag is required")
 			}
 			c := access.Client(cmd)
@@ -63,26 +70,19 @@ permission-set replacement, this is a partial update.`,
 	cmd.Flags().StringVar(&subject, "subject", "", "New user email principal")
 	cmd.Flags().StringVar(&role, "role", "", "New custom Role name (exclusive with --platform-role)")
 	cmd.Flags().StringVar(&platformRole, "platform-role", "", "New PlatformRole name (exclusive with --role)")
-	cmd.Flags().StringVar(&condition, "condition", "", "Cedar expression (see Conditions below)")
+	cmd.Flags().StringArrayVar(&conditions, "condition", nil, "Replace complete requirement list (repeatable)")
+	cmd.Flags().BoolVar(&clear, "clear-conditions", false, "Clear conditions, broadening this grant")
+	cmd.MarkFlagsMutuallyExclusive("condition", "clear-conditions")
 	cmd.MarkFlagsMutuallyExclusive("role", "platform-role")
 	setConditionHelp(cmd)
 	return cmd
 }
 
-const updateExamples = `  # Change the subject, preserving the role reference and condition.
-  gcphcpctl rolebinding update viewer --subject bob@example.com
+const updateExamples = `  # Preserve conditions.
+  gcphcpctl rolebinding update regional-viewer --subject bob@example.com
 
-  # Switch to a custom Role or a PlatformRole.
-  gcphcpctl rolebinding update viewer --role limited-operations
-  gcphcpctl rolebinding update viewer --platform-role cluster-viewer
+  # Replace the complete list.
+  gcphcpctl rolebinding update regional-viewer --condition 'region NotIn ["us-central1"]'
 
-  # Replace the condition.
-  gcphcpctl rolebinding update viewer \
-    --condition 'context.resourcePlural == "clusters" && context.resourceName like "bob*"'
-
-  # Clear the condition.
-  gcphcpctl rolebinding update viewer --condition ''
-
-  # Change several fields together.
-  gcphcpctl rolebinding update viewer \
-    --subject bob@example.com --role limited-operations --condition ''`
+  # Clear restrictions, broadening this grant.
+  gcphcpctl rolebinding update regional-viewer --clear-conditions`

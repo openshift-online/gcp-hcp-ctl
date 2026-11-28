@@ -1,77 +1,132 @@
 package rolebinding
 
 import (
-	"os/exec"
+	"encoding/json"
+	gcpv1 "github.com/openshift-online/gecko/platform-api/api/public/v1"
+	"net/http"
+	"reflect"
 	"strings"
 	"testing"
+	"unicode"
 	"unicode/utf8"
-
-	gcpv1 "github.com/openshift-online/gecko/platform-api/api/public/v1"
 )
 
-func TestConditionPreview(t *testing.T) {
-	for _, tc := range []struct{ input, want string }{
-		{"", "<none>"}, {" ", " "}, {strings.Repeat("é", 39), strings.Repeat("é", 39)},
-		{strings.Repeat("é", 40), strings.Repeat("é", 40)}, {strings.Repeat("é", 41), strings.Repeat("é", 40) + "..."},
-		{"a\tb\nc\r\x1b", `a\tb\nc\r\u001b`},
-		{strings.Repeat("x", 39) + "\t", strings.Repeat("x", 39) + "..."},
-		{strings.Repeat("x", 35) + "\x1b", strings.Repeat("x", 35) + "..."},
-	} {
-		got := conditionPreview(&tc.input)
-		if got != tc.want {
-			t.Errorf("preview %q: got %q want %q", tc.input, got, tc.want)
-		}
-		if !utf8.ValidString(got) {
-			t.Error("invalid UTF-8")
-		}
-	}
-	if got := conditionPreview(nil); got != "<none>" {
-		t.Fatal(got)
-	}
-}
-
-func TestConditionShellRoundTrip(t *testing.T) {
-	ranShells := 0
-	inputs := []string{"", "normal", " 'single' \"double\" $(no) `x` ", "line 1\nline 2\n", "\t\x1b[31m\x7f's\\x", "unicode café\u202e hidden"}
-	for _, shell := range []string{"bash", "zsh"} {
-		path, err := exec.LookPath(shell)
+func TestParseCondition(t *testing.T) {
+	for _, input := range []string{`name In ["demo"]`, `region NotIn ["é*"]`, " \tregion In [\"a\", \"b\", \"a\"]\r\n", `name NotIn ["AND OR", " x ", "\u002a", "\\*"]`, "name In [\n\"a\"\n]"} {
+		r, err := parseCondition(input)
 		if err != nil {
-			t.Logf("%s unavailable", shell)
+			t.Errorf("%q: %v", input, err)
 			continue
 		}
-		ranShells++
-		t.Logf("running shell round trips with %s", path)
-		for _, input := range inputs {
-			// Only controlled test fixtures are ever evaluated as shell code.
-			literal := conditionArgument(&input)
-			cmd := exec.Command(path, "-c", "printf '%s' "+literal)
-			got, err := cmd.Output()
-			if err != nil || string(got) != input {
-				t.Errorf("%s %q: %q, %v; literal %q", shell, input, got, err, literal)
-			}
+		again, err := parseCondition(mustFormatCondition(t, r))
+		if err != nil || !reflect.DeepEqual(r, again) {
+			t.Fatalf("roundtrip %v %v", r, err)
 		}
 	}
-	if ranShells == 0 {
-		t.Fatal("shell round-trip coverage requires at least one supported shell (bash or zsh) on PATH")
+	for _, input := range []string{`name == "x"`, `name != "x"`, `name=="x"`, `region != "x"`, "", " \t", `true`, `Name == "x"`, `name in ["x"]`, `name In["x"]`, `nameIn ["x"]`, `name = = "x"`, `name == null`, `name In null`, `name In []`, `name In [null]`, `name In ["x",null]`, `name In [1]`, `name In [true]`, `name In [[]]`, `name In [{}]`, `name In [""]`, `name In ["\u2003"]`, `name In [" "]`, `name In ["x",]`, `name In ["\*"]`, `name In ["x"] AND name In ["y"]`, `name In ["x"] {}`, "name\u00a0In [\"x\"]"} {
+		if r, err := parseCondition(input); err == nil {
+			t.Errorf("accepted %q: %#v", input, r)
+		}
+	}
+}
+func FuzzParseCondition(f *testing.F) {
+	for _, s := range []string{`name == "x"`, `region In ["a", "b*"]`, `name In [null]`, "name In [\n\"x\"]", `name != "\\*"`, `name == "x" trailing`} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		r, err := parseCondition(s)
+		if err != nil {
+			return
+		}
+		next, err := parseCondition(mustFormatCondition(t, r))
+		if err != nil || !reflect.DeepEqual(r, next) {
+			t.Fatalf("unstable %#v %v", r, err)
+		}
+	})
+}
+func TestConditionPreview(t *testing.T) {
+	if mustConditionPreview(t, nil) != "<none>" {
+		t.Fatal("missing placeholder")
+	}
+	for _, value := range []string{"x", "\n\t\x1b", strings.Repeat("é", 80)} {
+		r := gcpv1.RoleBindingRequirement{Key: "name", Operator: "In", Values: []string{value}}
+		got := mustConditionPreview(t, []gcpv1.RoleBindingRequirement{r})
+		if utf8.RuneCountInString(got) > 43 || strings.ContainsAny(got, "\n\t\x1b") {
+			t.Fatalf("unsafe preview %q", got)
+		}
+	}
+	r := gcpv1.RoleBindingRequirement{Key: "name", Operator: "In"}
+	if mustFormatCondition(t, r) != "name In []" {
+		t.Fatal(mustFormatCondition(t, r))
+	}
+}
+func TestPublicConditionDeepCopy(t *testing.T) {
+	b := &gcpv1.RoleBinding{Spec: gcpv1.RoleBindingSpec{Conditions: []gcpv1.RoleBindingRequirement{{Key: "name", Operator: "In", Values: []string{"x"}}}}}
+	c := b.DeepCopy()
+	c.Spec.Conditions[0].Values[0] = "y"
+	c.Spec.Conditions[0].Key = "region"
+	if b.Spec.Conditions[0].Values[0] != "x" || b.Spec.Conditions[0].Key != "name" {
+		t.Fatal("aliased")
+	}
+	if _, err := json.Marshal(c); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestPublicConditionDeepCopy(t *testing.T) {
-	for _, c := range []*string{nil, str(""), str("condition")} {
-		b := &gcpv1.RoleBinding{Spec: gcpv1.RoleBindingSpec{Condition: c}}
-		copy := b.DeepCopy()
-		if c == nil {
-			if copy.Spec.Condition != nil {
-				t.Fatal("nil condition changed")
-			}
-			continue
-		}
-		if copy.Spec.Condition == c || *copy.Spec.Condition != *c {
-			t.Fatal("condition not copied")
-		}
-		*copy.Spec.Condition = "changed"
-		if *c == "changed" {
-			t.Fatal("aliased condition")
+func TestDetailConditions(t *testing.T) {
+	for _, tc := range []struct {
+		conditions []any
+		want       string
+	}{
+		{nil, "Conditions:\n  None\n"},
+		{wireConditions("demo*"), "Conditions:\n  - name In [\"demo*\"]\n"},
+		{append(wireConditions("x"), wireConditions("y")...), "Conditions:\n  - name In [\"x\"]\n  - name In [\"y\"]\n"},
+		{[]any{map[string]any{"key": "region", "operator": "NotIn", "values": []any{}}}, "Conditions:\n  - region NotIn []\n"},
+	} {
+		out, _, err := executeBinding(t, func(w http.ResponseWriter, r *http.Request) {
+			response(w, obj(map[string]any{"subject": "a@b", "roleRef": map[string]any{"kind": "Role", "name": "r"}, "conditions": tc.conditions}))
+		}, "get", "grant")
+		if err != nil || !strings.HasSuffix(out, tc.want) {
+			t.Fatalf("%v %q want suffix %q", err, out, tc.want)
 		}
 	}
+}
+
+func TestCanonicalControlEscapes(t *testing.T) {
+	for _, v := range []string{"\x00\x1b\u009b\u200b", "'\"\\\né"} {
+		r := gcpv1.RoleBindingRequirement{Key: "name", Operator: "In", Values: []string{v}}
+		out := mustFormatCondition(t, r)
+		for _, c := range out {
+			if !unicode.IsPrint(c) {
+				t.Fatalf("unsafe %q", out)
+			}
+		}
+		back, err := parseCondition(out)
+		if err != nil || !reflect.DeepEqual(back, r) {
+			t.Fatalf("%q %v", out, err)
+		}
+	}
+	// A JSON escape straddling the boundary must be dropped as a whole token.
+	r := gcpv1.RoleBindingRequirement{Key: "name", Operator: "In", Values: []string{strings.Repeat("a", 27) + "\x1b"}}
+	p := mustConditionPreview(t, []gcpv1.RoleBindingRequirement{r})
+	if strings.HasSuffix(strings.TrimSuffix(p, "..."), `\u0`) {
+		t.Fatal(p)
+	}
+}
+
+func mustFormatCondition(t *testing.T, r gcpv1.RoleBindingRequirement) string {
+	t.Helper()
+	result, err := formatCondition(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+func mustConditionPreview(t *testing.T, requirements []gcpv1.RoleBindingRequirement) string {
+	t.Helper()
+	result, err := conditionPreview(requirements)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
