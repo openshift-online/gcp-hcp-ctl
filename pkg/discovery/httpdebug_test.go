@@ -32,7 +32,7 @@ func TestHTTPFetcherTraceIsInvocationScoped(t *testing.T) {
 		if enabled {
 			ctx = httpdebug.WithTrace(ctx, &trace, 6)
 		}
-		manifest, err := fetcher.Fetch(ctx, server.URL+"/manifest")
+		manifest, err := fetcher.Fetch(ctx, server.URL+"/manifest", manifestVersionV1)
 		if err != nil || manifest.Environment != "private-environment" {
 			t.Fatalf("manifest = %+v, error = %v", manifest, err)
 		}

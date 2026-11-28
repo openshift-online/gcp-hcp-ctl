@@ -3,12 +3,16 @@ package platformapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"unicode/utf8"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const maxClassifiedBodyBytes = 64 * 1024
+const (
+	maxClassifiedBodyBytes = 64 * 1024
+	readOnlyRegionLabel    = "write request rejected by a read-only region"
+)
 
 // reasonLabels is intentionally a closed allowlist; StatusReason is a string
 // type, not a runtime-validated enum. Never display the raw reason or message.
@@ -53,6 +57,11 @@ func displayMessage(statusCode int, status *metav1.Status, body []byte) string {
 	case http.StatusForbidden:
 		return "permission denied"
 	}
+	// The replication guard returns a 405 Kubernetes Status. Match its known
+	// shape before falling back to the generic response classification.
+	if isReadOnlyRegionStatus(statusCode, status) {
+		return readOnlyRegionLabel
+	}
 
 	if status != nil {
 		if label, ok := reasonLabels[status.Reason]; ok {
@@ -66,6 +75,21 @@ func displayMessage(statusCode int, status *metav1.Status, body []byte) string {
 		}
 	}
 	return statusFallback(statusCode)
+}
+
+// isReadOnlyRegionStatus recognizes the follower write guard without displaying
+// the server-provided message. Other 405 responses retain generic handling.
+func isReadOnlyRegionStatus(statusCode int, status *metav1.Status) bool {
+	if statusCode != http.StatusMethodNotAllowed || status == nil ||
+		status.Status != metav1.StatusFailure ||
+		status.Reason != metav1.StatusReasonMethodNotAllowed || status.Code != http.StatusMethodNotAllowed {
+		return false
+	}
+	message := status.Message
+	return strings.HasPrefix(message, `region "`) &&
+		strings.Contains(message, `" is a replication follower and does not accept writes to `) &&
+		strings.Contains(message, ` resources; send writes to the leader region "`) &&
+		strings.HasSuffix(message, `"`)
 }
 
 func labelFromRawBody(statusCode int, body []byte) string {

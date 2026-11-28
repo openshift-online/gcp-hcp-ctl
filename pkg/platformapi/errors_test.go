@@ -2,6 +2,7 @@ package platformapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -101,6 +102,41 @@ func TestGenericBodyLabels(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFollowerWriteGuardStatus(t *testing.T) {
+	status := &metav1.Status{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"},
+		Status:   metav1.StatusFailure,
+		Reason:   metav1.StatusReasonMethodNotAllowed,
+		Code:     http.StatusMethodNotAllowed,
+		Message:  `region "us-east4" is a replication follower and does not accept writes to RoleBinding resources; send writes to the leader region "us-central1"`,
+	}
+	const want = "write request rejected by a read-only region"
+	if got := displayMessage(http.StatusMethodNotAllowed, status, nil); got != want {
+		t.Errorf("follower write rejection = %q, want %q", got, want)
+	}
+	status.Message = "this method is not allowed for another reason"
+	if got := displayMessage(http.StatusMethodNotAllowed, status, nil); got == readOnlyRegionLabel {
+		t.Errorf("unrelated method rejection was classified as follower write rejection")
+	}
+}
+
+func TestFollowerWriteGuardHTTPResponse(t *testing.T) {
+	client := testRESTClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Allow", http.MethodGet)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_ = json.NewEncoder(w).Encode(metav1.Status{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"},
+			Status:   metav1.StatusFailure,
+			Reason:   metav1.StatusReasonMethodNotAllowed,
+			Code:     http.StatusMethodNotAllowed,
+			Message:  `region "us-east4" is a replication follower and does not accept writes to RoleBinding resources; send writes to the leader region "us-central1"`,
+		})
+	})
+	err := client.RoleBindings().Delete(context.Background(), "test-project", "binding")
+	assertHTTPError(t, err, readOnlyRegionLabel, http.StatusMethodNotAllowed, http.MethodDelete, "rolebindings", "binding", false)
 }
 
 func TestBadBodiesAndFallbacks(t *testing.T) {

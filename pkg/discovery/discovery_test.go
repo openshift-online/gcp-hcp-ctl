@@ -22,7 +22,7 @@ type fakeFetcher struct {
 	err            error
 }
 
-func (fetcher *fakeFetcher) Fetch(_ context.Context, manifestURL string) (*Manifest, error) {
+func (fetcher *fakeFetcher) Fetch(_ context.Context, manifestURL string, version int) (*Manifest, error) {
 	if fetcher.callsByURL == nil {
 		fetcher.callsByURL = map[string]int{}
 	}
@@ -32,6 +32,9 @@ func (fetcher *fakeFetcher) Fetch(_ context.Context, manifestURL string) (*Manif
 	}
 	manifest, ok := fetcher.manifestsByURL[manifestURL]
 	if !ok {
+		if version == manifestVersionV2 {
+			return nil, &HTTPStatusError{URL: manifestURL, StatusCode: http.StatusNotFound}
+		}
 		return nil, fmt.Errorf("no manifest for %s", manifestURL)
 	}
 	return manifest, nil
@@ -39,7 +42,7 @@ func (fetcher *fakeFetcher) Fetch(_ context.Context, manifestURL string) (*Manif
 
 func manifestWith(region, apiEndpoint, oidcIssuer string) *Manifest {
 	return &Manifest{
-		SchemaVersion: manifestSchemaVersion,
+		SchemaVersion: manifestVersionV1,
 		Environment:   "integration",
 		Regions: map[string]RegionInfo{
 			region: {OIDCIssuer: oidcIssuer, PlatformAPIEndpoint: apiEndpoint},
@@ -148,9 +151,12 @@ func TestEndpointRequiredError(t *testing.T) {
 
 func TestParseManifest(t *testing.T) {
 	valid := []byte(`{"schema_version":"v1","environment":"integration","regions":{"us-central1":{"oidc_issuer":"https://oidc.int.gcp-hcp.devshift.net","platform_api_endpoint":"https://api.int.gcp-hcp.devshift.net"}}}`)
-	manifest, err := ParseManifest(valid)
+	manifest, err := ParseManifest(valid, manifestVersionV1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if manifest.SchemaVersion != manifestVersionV1 {
+		t.Errorf("schema version = %d, want v1", manifest.SchemaVersion)
 	}
 	if manifest.Regions["us-central1"].PlatformAPIEndpoint != "https://api.int.gcp-hcp.devshift.net" {
 		t.Errorf("unexpected api endpoint: %q", manifest.Regions["us-central1"].PlatformAPIEndpoint)
@@ -160,14 +166,17 @@ func TestParseManifest(t *testing.T) {
 	// platform-ci.gcp-hcp.devshift.net) is accepted: endpoint validation is tied
 	// to the shared discovery domain, not a per-environment label.
 	ci := []byte(`{"schema_version":"v1","environment":"ci","regions":{"us-west1":{"oidc_issuer":"https://oidc.e2e-reg-us-w1-x.platform-ci.gcp-hcp.devshift.net","platform_api_endpoint":"https://platform-api-us-west1-x.platform-ci.gcp-hcp.devshift.net"}}}`)
-	if _, err := ParseManifest(ci); err != nil {
+	if _, err := ParseManifest(ci, manifestVersionV1); err != nil {
 		t.Errorf("CI manifest should parse: %v", err)
 	}
 
-	if _, err := ParseManifest([]byte(`{"schema_version":"v2","regions":{}}`)); err == nil {
+	if _, err := ParseManifest([]byte(`{"schema_version":"v2","regions":{}}`), manifestVersionV1); err == nil {
 		t.Error("expected error for unsupported schema_version")
 	}
-	if _, err := ParseManifest([]byte(`not json`)); err == nil {
+	if _, err := ParseManifest(valid, manifestVersionV2); err == nil {
+		t.Error("v1 document must not be accepted at the v2 URL")
+	}
+	if _, err := ParseManifest([]byte(`not json`), manifestVersionV1); err == nil {
 		t.Error("expected error for invalid JSON")
 	}
 	// Every advertised endpoint must be HTTPS, carry no credentials, and sit under
@@ -177,7 +186,7 @@ func TestParseManifest(t *testing.T) {
 		`{"schema_version":"v1","environment":"integration","regions":{"us-central1":{"oidc_issuer":"https://oidc.int.gcp-hcp.devshift.net","platform_api_endpoint":"https://user@api.int.gcp-hcp.devshift.net"}}}`,
 		`{"schema_version":"v1","environment":"integration","regions":{"us-central1":{"oidc_issuer":"https://oidc.int.gcp-hcp.devshift.net","platform_api_endpoint":"https://attacker.example.com"}}}`,
 	} {
-		if _, err := ParseManifest([]byte(data)); err == nil {
+		if _, err := ParseManifest([]byte(data), manifestVersionV1); err == nil {
 			t.Errorf("expected error for malformed manifest %s", data)
 		}
 	}
@@ -188,6 +197,8 @@ func TestHTTPFetcher(t *testing.T) {
 		switch r.URL.Path {
 		case "/valid":
 			fmt.Fprint(w, `{"schema_version":"v1","environment":"integration","regions":{"us-central1":{"oidc_issuer":"https://oidc.int.gcp-hcp.devshift.net","platform_api_endpoint":"https://api.int.gcp-hcp.devshift.net"}}}`)
+		case "/valid-v2":
+			fmt.Fprint(w, `{"schemaVersion":2,"environment":"integration","global":{"authorization_endpoint":"https://authz.int.gcp-hcp.devshift.net"},"regions":{}}`)
 		case "/large":
 			fmt.Fprint(w, strings.Repeat("x", maxManifestBytes+1))
 		case "/redirect":
@@ -200,11 +211,22 @@ func TestHTTPFetcher(t *testing.T) {
 
 	fetcher := NewHTTPFetcher(0)
 	fetcher.httpClient.Transport = server.Client().Transport
-	if _, err := fetcher.Fetch(context.Background(), server.URL+"/valid"); err != nil {
+	if _, err := fetcher.Fetch(context.Background(), server.URL+"/valid", manifestVersionV1); err != nil {
 		t.Fatalf("valid HTTPS manifest: %v", err)
 	}
+	if _, err := fetcher.Fetch(context.Background(), server.URL+"/valid-v2", manifestVersionV2); err != nil {
+		t.Fatalf("valid HTTPS v2 manifest: %v", err)
+	}
+	if _, err := fetcher.Fetch(context.Background(), server.URL+"/missing", manifestVersionV2); err == nil {
+		t.Fatal("expected missing v2 manifest error")
+	} else {
+		var statusErr *HTTPStatusError
+		if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusNotFound {
+			t.Fatalf("expected typed 404, got %v", err)
+		}
+	}
 	for _, target := range []string{"http://example.com/manifest", server.URL + "/large", server.URL + "/redirect"} {
-		if _, err := fetcher.Fetch(context.Background(), target); err == nil {
+		if _, err := fetcher.Fetch(context.Background(), target, manifestVersionV1); err == nil {
 			t.Errorf("expected error for %s", target)
 		}
 	}
@@ -212,6 +234,7 @@ func TestHTTPFetcher(t *testing.T) {
 
 func TestRegion(t *testing.T) {
 	derivedURL := "https://discovery.int.gcp-hcp.devshift.net/v1/regions.json"
+	v2URL := "https://discovery.int.gcp-hcp.devshift.net/v2/endpoints.json"
 	newFetcher := func() *fakeFetcher {
 		return &fakeFetcher{manifestsByURL: map[string]*Manifest{
 			derivedURL: manifestWith("us-central1", "https://api.int.gcp-hcp.devshift.net", "https://oidc.int.gcp-hcp.devshift.net"),
@@ -250,6 +273,9 @@ func TestRegion(t *testing.T) {
 		if calls := fetcher.callsByURL[derivedURL]; calls != 1 {
 			t.Errorf("expected one fetch, got %d", calls)
 		}
+		if calls := fetcher.callsByURL[v2URL]; calls != 1 {
+			t.Errorf("expected one v2 check, got %d", calls)
+		}
 	})
 
 	t.Run("explicit OIDC combines with discovered API", func(t *testing.T) {
@@ -265,6 +291,9 @@ func TestRegion(t *testing.T) {
 		}
 		if calls := fetcher.callsByURL[derivedURL]; calls != 1 {
 			t.Errorf("expected one fetch, got %d", calls)
+		}
+		if calls := fetcher.callsByURL[v2URL]; calls != 1 {
+			t.Errorf("expected one v2 check, got %d", calls)
 		}
 	})
 
@@ -295,6 +324,9 @@ func TestRegion(t *testing.T) {
 		}
 		if calls := fetcher.callsByURL[derivedURL]; calls != 1 {
 			t.Errorf("expected 1 fetch, got %d", calls)
+		}
+		if calls := fetcher.callsByURL[v2URL]; calls != 1 {
+			t.Errorf("expected one v2 check, got %d", calls)
 		}
 	})
 
@@ -346,6 +378,7 @@ func TestRegion(t *testing.T) {
 
 func TestFetchManifest(t *testing.T) {
 	derivedURL := "https://discovery.int.gcp-hcp.devshift.net/v1/regions.json"
+	v2URL := "https://discovery.int.gcp-hcp.devshift.net/v2/endpoints.json"
 
 	t.Run("unresolved discovery hostname gives a formatted error", func(t *testing.T) {
 		for _, tc := range []struct {
@@ -396,7 +429,7 @@ func TestFetchManifest(t *testing.T) {
 		}
 	})
 
-	t.Run("shares the resolver cache with Endpoints", func(t *testing.T) {
+	t.Run("shares the resolver cache across regional and authorization lookups", func(t *testing.T) {
 		fetcher := &fakeFetcher{manifestsByURL: map[string]*Manifest{
 			derivedURL: manifestWith("us-central1", "https://api.int.gcp-hcp.devshift.net", "https://oidc.int.gcp-hcp.devshift.net"),
 		}}
@@ -407,8 +440,14 @@ func TestFetchManifest(t *testing.T) {
 		if _, err := resolver.Region(context.Background(), &config.Config{Region: "us-central1", Environment: "integration"}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		if _, err := resolver.Authorization(context.Background(), &config.Config{Region: "us-central1", Environment: "integration"}); err != nil {
+			t.Fatalf("unexpected authorization fallback error: %v", err)
+		}
 		if calls := fetcher.callsByURL[derivedURL]; calls != 1 {
 			t.Errorf("expected 1 fetch (cached), got %d", calls)
+		}
+		if calls := fetcher.callsByURL[v2URL]; calls != 1 {
+			t.Errorf("expected 1 v2 check (cached), got %d", calls)
 		}
 	})
 
@@ -417,4 +456,199 @@ func TestFetchManifest(t *testing.T) {
 			t.Error("expected error when environment is empty")
 		}
 	})
+}
+
+func TestV2DiscoveryIsSharedByAllResources(t *testing.T) {
+	v2URL, _ := ManifestV2URL("integration")
+	v1URL, _ := ManifestURL("integration")
+	fetcher := &fakeFetcher{
+		manifestsByURL: map[string]*Manifest{v2URL: {
+			SchemaVersion: 2,
+			Environment:   "integration",
+			Global:        GlobalEndpoints{AuthorizationEndpoint: "https://authz.int.gcp-hcp.devshift.net"},
+			Regions: map[string]RegionInfo{
+				"us-central1": {
+					PlatformAPIEndpoint: "https://api-v2.int.gcp-hcp.devshift.net",
+					OIDCIssuer:          "https://oidc-v2.int.gcp-hcp.devshift.net",
+				},
+			},
+		}, v1URL: manifestWith("us-central1", "https://api-v1.int.gcp-hcp.devshift.net", "")},
+	}
+	resolver := newResolver(fetcher)
+	ctx := context.Background()
+	manifest, err := resolver.FetchManifest(ctx, "integration") // regions list
+	if err != nil || manifest.SchemaVersion != manifestVersionV2 || manifest.Regions["us-central1"].PlatformAPIEndpoint != "https://api-v2.int.gcp-hcp.devshift.net" {
+		t.Fatalf("v2 regions manifest: %+v, %v", manifest, err)
+	}
+	regional, err := resolver.Region(ctx, &config.Config{Environment: "integration", Region: "us-central1"}) // cluster and nodepool
+	if err != nil || regional.PlatformAPIEndpoint != "https://api-v2.int.gcp-hcp.devshift.net" || regional.OIDCIssuer != "https://oidc-v2.int.gcp-hcp.devshift.net" {
+		t.Fatalf("v2 regional endpoints: %+v, %v", regional, err)
+	}
+	authorization, err := resolver.Authorization(ctx, &config.Config{Environment: "integration"}) // role and rolebinding
+	if err != nil || authorization.Endpoint != "https://authz.int.gcp-hcp.devshift.net" {
+		t.Fatalf("v2 authorization endpoint: %+v, %v", authorization, err)
+	}
+	if fetcher.callsByURL[v2URL] != 1 || fetcher.callsByURL[v1URL] != 0 {
+		t.Fatalf("v2 should be fetched once without v1 fallback: %v", fetcher.callsByURL)
+	}
+}
+
+func TestRegionDoesNotFallbackOnV2Failure(t *testing.T) {
+	v2URL, _ := ManifestV2URL("integration")
+	v1URL, _ := ManifestURL("integration")
+	for _, failure := range []error{
+		&HTTPStatusError{URL: v2URL, StatusCode: http.StatusServiceUnavailable},
+		errors.New("unsupported discovery schemaVersion 3"),
+	} {
+		fetcher := &fakeFetcher{
+			err: failure,
+			manifestsByURL: map[string]*Manifest{
+				v1URL: manifestWith("us-central1", "https://api-v1.int.gcp-hcp.devshift.net", ""),
+			},
+		}
+		_, err := newResolver(fetcher).Region(context.Background(), &config.Config{Environment: "integration", Region: "us-central1"})
+		if !errors.Is(err, failure) || fetcher.callsByURL[v2URL] != 1 || fetcher.callsByURL[v1URL] != 0 {
+			t.Fatalf("v2 failure %v was hidden: %v, calls: %v", failure, err, fetcher.callsByURL)
+		}
+	}
+}
+
+func TestParseManifestV2(t *testing.T) {
+	valid := []byte(`{"schemaVersion":2,"environment":"dev","global":{"authorization_endpoint":"https://authz.ck1104.dev.gcp-hcp.devshift.net"},"regions":{"us-central1":{"platform_api_endpoint":"https://api-c1.dev.gcp-hcp.devshift.net","oidc_issuer":"https://oidc-c1.dev.gcp-hcp.devshift.net"}}}`)
+	manifest, err := ParseManifest(valid, manifestVersionV2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Global.AuthorizationEndpoint != "https://authz.ck1104.dev.gcp-hcp.devshift.net" {
+		t.Fatal(manifest.Global)
+	}
+	if manifest.SchemaVersion != manifestVersionV2 {
+		t.Fatalf("schema version = %d, want v2", manifest.SchemaVersion)
+	}
+	if _, err := ParseManifest(valid, manifestVersionV1); err == nil {
+		t.Fatal("v2 document must not be accepted at the v1 URL")
+	}
+	for _, input := range []string{
+		`{"schemaVersion":3,"regions":{}}`,
+		`{"schemaVersion":2,"global":{"authorization_endpoint":"http://authz.dev.gcp-hcp.devshift.net"}}`,
+		`{"schemaVersion":2,"global":{"authorization_endpoint":"https://attacker.example.com"}}`,
+		`{"schemaVersion":2,"global":{"authorization_endpoint":"https://authz.int.gcp-hcp.devshift.net/other"}}`,
+		`{"schemaVersion":2,"global":{"authorization_endpoint":"https://authz.int.gcp-hcp.devshift.net?token=secret"}}`,
+		`{"schemaVersion":2,"regions":{"us-central1":{"platform_api_endpoint":"https://attacker.example.com"}}}`,
+	} {
+		if _, err := ParseManifest([]byte(input), manifestVersionV2); err == nil {
+			t.Errorf("accepted invalid manifest %s", input)
+		}
+	}
+	if _, err := ParseManifest([]byte(`{"schemaVersion":3}`), manifestVersionV2); err == nil || !strings.Contains(err.Error(), "unsupported discovery schemaVersion 3") {
+		t.Fatalf("unsupported schema error: %v", err)
+	}
+}
+
+func TestAuthorizationResolution(t *testing.T) {
+	v2URL, err := ManifestV2URL("integration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v2URL != "https://discovery.int.gcp-hcp.devshift.net/v2/endpoints.json" {
+		t.Fatal(v2URL)
+	}
+	v1URL, _ := ManifestURL("integration")
+	fetcher := &fakeFetcher{
+		manifestsByURL: map[string]*Manifest{v2URL: {
+			SchemaVersion: 2,
+			Global:        GlobalEndpoints{AuthorizationEndpoint: "https://authz.int.gcp-hcp.devshift.net"},
+			Regions: map[string]RegionInfo{
+				"us-central1": {PlatformAPIEndpoint: "https://api-c1.int.gcp-hcp.devshift.net"},
+			},
+		}, v1URL: manifestWith("us-central1", "https://api-c1.int.gcp-hcp.devshift.net", "")},
+	}
+	resolver := newResolver(fetcher)
+	ctx := context.Background()
+	global, err := resolver.Authorization(ctx, &config.Config{Environment: "integration"})
+	if err != nil || global.Endpoint != "https://authz.int.gcp-hcp.devshift.net" {
+		t.Fatalf("global without region: %+v, %v", global, err)
+	}
+	// A promotion changes regional data in a freshly published manifest but
+	// leaves the customer-facing URL unchanged.
+	promoted := &fakeFetcher{manifestsByURL: map[string]*Manifest{v2URL: {
+		SchemaVersion: 2,
+		Global:        GlobalEndpoints{AuthorizationEndpoint: global.Endpoint},
+		Regions: map[string]RegionInfo{
+			"us-central1": {PlatformAPIEndpoint: "https://new-leader.int.gcp-hcp.devshift.net"},
+		},
+	}}}
+	again, err := newResolver(promoted).Authorization(ctx, &config.Config{Environment: "integration", Region: "us-central1"})
+	if err != nil || again != global {
+		t.Fatalf("endpoint changed after promotion: %+v, %v", again, err)
+	}
+	_, err = resolver.Authorization(ctx, &config.Config{Environment: "integration", Region: "us-central1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls := fetcher.callsByURL[v2URL]; calls != 1 {
+		t.Fatalf("expected cached v2 manifest, got %d fetches", calls)
+	}
+	// Explicit endpoints bypass discovery, including its schema errors.
+	overrideFetcher := &fakeFetcher{err: errors.New("unsupported schema")}
+	override, err := newResolver(overrideFetcher).Authorization(ctx, &config.Config{Environment: "integration", APIEndpoint: "https://explicit.example.com"})
+	if err != nil || override.Endpoint != "https://explicit.example.com" {
+		t.Fatalf("override: %+v, %v", override, err)
+	}
+	if len(overrideFetcher.callsByURL) != 0 {
+		t.Fatalf("explicit endpoint still fetched discovery: %v", overrideFetcher.callsByURL)
+	}
+	withoutEnv, err := newResolver(overrideFetcher).Authorization(ctx, &config.Config{Region: "us-central1"})
+	if withoutEnv.Endpoint != "" || err == nil || !strings.Contains(err.Error(), "--env") {
+		t.Fatalf("missing environment: %+v, %v", withoutEnv, err)
+	}
+
+	for _, test := range []struct {
+		name         string
+		manifest     *Manifest
+		region       string
+		wantEndpoint string
+		wantError    string
+		wantV1Fetch  int
+	}{
+		{name: "v2 absent without region", wantError: "set --region to use v1 regional discovery", wantV1Fetch: 1},
+		{name: "v2 absent with inherited follower region", region: "us-east4", wantEndpoint: "https://api-e4.int.gcp-hcp.devshift.net", wantV1Fetch: 1},
+		{name: "global omitted without region", manifest: &Manifest{SchemaVersion: 2}, wantError: "global authorization endpoint is not configured"},
+		{name: "global omitted with inherited follower region", manifest: &Manifest{SchemaVersion: 2, Regions: map[string]RegionInfo{
+			"us-east4": {PlatformAPIEndpoint: "https://api-e4.int.gcp-hcp.devshift.net"},
+		}}, region: "us-east4", wantError: "global authorization endpoint is not configured"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fetcher := &fakeFetcher{manifestsByURL: map[string]*Manifest{
+				v1URL: manifestWith("us-east4", "https://api-e4.int.gcp-hcp.devshift.net", ""),
+			}}
+			if test.manifest != nil {
+				fetcher.manifestsByURL[v2URL] = test.manifest
+			}
+			info, err := newResolver(fetcher).Authorization(ctx, &config.Config{Environment: "integration", Region: test.region})
+			if test.wantError != "" {
+				if info.Endpoint != "" || err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("expected %q, got %+v, %v", test.wantError, info, err)
+				}
+			} else if err != nil || info.Endpoint != test.wantEndpoint {
+				t.Fatalf("expected endpoint %q, got %+v, %v", test.wantEndpoint, info, err)
+			}
+			if fetcher.callsByURL[v1URL] != test.wantV1Fetch || fetcher.callsByURL[v2URL] != 1 {
+				t.Fatalf("unexpected discovery fetches: %v", fetcher.callsByURL)
+			}
+		})
+	}
+}
+
+func TestAuthorizationDoesNotFallbackOnDiscoveryFailure(t *testing.T) {
+	for _, failure := range []error{
+		&HTTPStatusError{URL: "https://discovery.int.gcp-hcp.devshift.net/v2/endpoints.json", StatusCode: http.StatusServiceUnavailable},
+		errors.New("unsupported discovery schemaVersion 3"),
+	} {
+		fetcher := &fakeFetcher{err: failure}
+		_, err := newResolver(fetcher).Authorization(context.Background(), &config.Config{Environment: "integration", Region: "us-central1"})
+		if !errors.Is(err, failure) || len(fetcher.callsByURL) != 1 {
+			t.Fatalf("failure %v was hidden: %v, calls: %v", failure, err, fetcher.callsByURL)
+		}
+	}
 }
