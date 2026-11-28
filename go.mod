@@ -14,7 +14,7 @@ require (
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/text v0.44.0
-	google.golang.org/api v0.316.0
+	google.golang.org/api v0.317.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.37.2
@@ -63,7 +63,7 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/genproto v0.0.0-20261104224025-d1e00e9f33ab // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261104224025-d1e00e9f33ab // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261104224025-d1e00e9f33ab // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261118221215-c8830f628b3f // indirect
 	google.golang.org/grpc v1.85.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098 // indirect
